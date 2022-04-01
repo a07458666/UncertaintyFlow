@@ -1,4 +1,6 @@
 /data/*
+/wandb/
+/trained_model/
 *.pyc
 /lightning_logs/
 /.ipynb_checkpoints/

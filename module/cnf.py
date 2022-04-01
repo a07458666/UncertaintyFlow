@@ -63,12 +63,12 @@ class CNF(nn.Module):
         if self.conditional:
             assert context is not None
             states = (x, _logpx, context)
-            atol = [self.atol] * 3
-            rtol = [self.rtol] * 3
+            atol = self.atol
+            rtol = self.rtol
         else:
             states = (x, _logpx)
-            atol = [self.atol] * 2
-            rtol = [self.rtol] * 2
+            atol = self.atol
+            rtol = self.rtol
 
         if integration_times is None:
             if self.train_T:
