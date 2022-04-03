@@ -1,0 +1,19 @@
+# config.yaml
+output_foloder: "test001"
+dataset: "my_1d"
+remark: ""
+
+# train
+batch: 5
+epochs: 3
+flow_modules: '32-32-32-32-32'
+cond_size: 1
+lr: 1.0e-3
+inputDim: 1
+
+# eval
+sample_count: 100
+eval_data:
+  count: 300
+  max: 3.0
+  min: -3.0

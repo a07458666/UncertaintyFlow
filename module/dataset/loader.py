@@ -1,27 +1,35 @@
 from os import path
+from torch.utils.data import Dataset
 from numpy.random import uniform, randn
 from sklearn.model_selection import train_test_split
 import numpy as np
 import torch.utils.data as data
 
-class Datafeed(data.Dataset):
-
-    def __init__(self, x_train, y_train=None, transform=None):
-        self.data = x_train
-        self.targets = y_train
+class MyDataset(Dataset):
+    def __init__(self, x, y, transform=None):
+        self.x = x
+        self.y = y
         self.transform = transform
 
     def __getitem__(self, index):
-        img = self.data[index]
-        if self.transform is not None:
-            img = self.transform(img)
-        if self.targets is not None:
-            return img, self.targets[index]
-        else:
-            return img
+        x = self.x[index]
+        y = self.y[index]
+
+        if self.transform:
+            x = self.transform(x)
+            y = self.transform(y)
+
+        return x, y
 
     def __len__(self):
-        return len(self.data)
+        return len(self.x)
+
+def loadDataset(datasetName):
+    if(datasetName == "my_1d"):
+        X_train, y_train, X_test, y_test = load_my_1d("./dataset")
+    elif (datasetName == "wiggle"):
+        X_train, y_train = load_wiggle()
+    return X_train, y_train
 
 def load_my_1d(base_dir):
     if not path.exists(base_dir + '/my_1d_data/'):
