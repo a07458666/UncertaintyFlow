@@ -28,14 +28,51 @@ def standard_normal_logprob(z):
     log_z = -0.5 * dim * log(2 * pi)
     return log_z - z.pow(2) / 2
 
+def position_encoding(x, m):
+    x_p_list = [x]
+    for i in range(m):
+        x_p_list.append(np.sin((2**(i+1)) * x))
+        x_p_list.append(np.cos((2**(i+1)) * x))
+    x = np.concatenate(x_p_list, axis=1)
+    return x
+
 def main(config, device):
     torch.manual_seed(0)
-    prior = cnf(config["inputDim"], config["flow_modules"], config["cond_size"], 1)
 
     X_train, y_train = loadDataset(config["dataset"])
+    if (config["add_uniform"]):
+        print("add_uniform data")
+        print("uniform count : ", int(X_train.shape[0] * config["uniform_rate"]))
+        print("uniform X rane : ", X_train.max(), X_train.min())
+        print("uniform y rane : ", y_train.max(), y_train.min())
+        print("X_train.shape", X_train.shape)
+        print("X_train[:10]", X_train[:10])
+        print("y_train.shape", y_train.shape)
+        print("y_train[:10]", y_train[:10])
+        uniform_count = int(X_train.shape[0] * config["uniform_rate"])
+        x_max = X_train.max() * config["uniform_scale"]
+        x_min = X_train.min() * config["uniform_scale"]
+        y_max = y_train.max() * config["uniform_scale"]
+        y_min = y_train.min() * config["uniform_scale"]
+        X_uniform = np.random.uniform(x_min, x_max, uniform_count).reshape(-1, 1)
+        y_uniform = np.random.uniform(y_min, y_max, uniform_count).reshape(-1, 1)
+        X_train = np.concatenate([X_uniform, X_train])
+        y_train = np.concatenate([y_uniform, y_train])
+
+    if config["position_encoding"]:
+        X_train = position_encoding(X_train, config["position_encoding_m"])
+    
+    if config["condition_scale"] != 1:
+        X_train = X_train * config["condition_scale"]
+
+    cond_size = config["cond_size"]
+    if config["position_encoding"]:
+        cond_size += (config["position_encoding_m"] * 2)
+    prior = cnf(config["inputDim"], config["flow_modules"], cond_size, 1)
+
     print("shape = ", X_train.shape, y_train.shape)
     trainset = MyDataset(torch.Tensor(X_train).to(device), torch.Tensor(y_train).to(device), transform=None)
-    train_loader = data.DataLoader(trainset, shuffle=False, batch_size=config["batch"], drop_last = True)
+    train_loader = data.DataLoader(trainset, shuffle=True, batch_size=config["batch"], drop_last = True)
     optimizer = optim.Adam(prior.parameters(), lr=config["lr"])
 
     with tqdm(range(config["epochs"])) as pbar:

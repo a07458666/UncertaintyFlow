@@ -1,6 +1,9 @@
 /data/*
 /wandb/
 /result/
+/dataset/**/*.txt
+/dataset/*
+
 *.pyc
 /lightning_logs/
 /.ipynb_checkpoints/
