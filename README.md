@@ -1,18 +1,18 @@
 # UncertaintyFlow
-UncertaintyFlow
+
 ![Uncertainty](./img/tmp.png)
 
 ## Installation
 
 Clone this repo.
 ```bash
-git clone https://github.com/RameenAbdal/StyleFlow.git
-cd StyleFlow/
+git@github.com:a07458666/UncertaintyFlow.git
+cd UncertaintyFlow/
 ```
 
-This code requires PyTorch, TensorFlow, Torchdiffeq, Python 3+ and Pyqt5. Please install dependencies by
+This code requires PyTorch, TensorFlow, Torchdiffeq and Python 3+. Please install dependencies by
 ```bash
-conda env create -f environment.yml
+pip install -r requirements.txt
 ```
 
 ## Config
@@ -24,7 +24,7 @@ output_folder: "output_folder"
 dataset: "my_1d"
 remark: ""
 condition_scale: 1
-position_encoding: False
+position_encoding: True
 position_encoding_m: 3
 
 # train
