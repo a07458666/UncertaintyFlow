@@ -105,8 +105,8 @@ def main(config, device):
                     wandb.log(logMsg)
                     wandb.watch(prior,log = "all", log_graph=True)  
 
-            torch.save(prior.state_dict(), f'result/{config["output_foloder"]}/flow_{str(epoch).zfill(2)}.pt')
-        torch.save(prior.state_dict(), f'result/{config["output_foloder"]}/flow_last.pt')
+            torch.save(prior.state_dict(), f'result/{config["output_folder"]}/flow_{str(epoch).zfill(2)}.pt')
+        torch.save(prior.state_dict(), f'result/{config["output_folder"]}/flow_last.pt')
 
 if __name__ == '__main__':
     # args
@@ -117,14 +117,14 @@ if __name__ == '__main__':
 
     # config
     config = loadConfig(args.config)
-    checkOutputDirectoryAndCreate(config["output_foloder"])
+    checkOutputDirectoryAndCreate(config["output_folder"])
     dumpConfig(config)
     print("config : ", config)
 
     # wandb
     os.environ["WANDB_WATCH"] = "false"
     if (wandb != None):
-        wandb.init(project="UncertaintyFlow", entity="andy-su", name=config["output_foloder"])
+        wandb.init(project="UncertaintyFlow", entity="andy-su", name=config["output_folder"])
         wandb.config.update(config)
         wandb.define_metric("loss", summary="min")
 

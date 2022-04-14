@@ -18,7 +18,7 @@ conda env create -f environment.yml
 ## Config
 ```yaml
 # config.yaml
-output_foloder: "output_foloder"
+output_folder: "output_folder"
 
 # my_1d, wiggle, matern, andrew, agw, origin, axis
 dataset: "my_1d"

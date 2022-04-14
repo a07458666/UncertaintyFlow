@@ -1,5 +1,5 @@
 # config.yaml
-output_foloder: "train_axis_dim32_uniform01_scale1o2"
+output_folder: "train_axis_dim32_uniform01_scale1o2"
 
 # my_1d, wiggle, matern, andrew, agw, origin, axis
 dataset: "axis"
