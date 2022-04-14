@@ -42,7 +42,7 @@ def loadDataset(datasetName):
     if(datasetName == "my_1d"):
         X_train, y_train, X_test, y_test = load_my_1d("./dataset")
     elif (datasetName == "wiggle"):
-        X_train, y_train = load_wiggle()
+        X_train, y_train = load_wiggle_1d()
     elif (datasetName == "matern"):
         X_train, y_train = load_matern_1d("./dataset")
     elif (datasetName == "andrew"):
@@ -119,7 +119,7 @@ def load_my_1d(base_dir):
 
     return X_train, y_homo_train, X_test, y_homo_test
 
-def load_wiggle():
+def load_wiggle_1d():
 
     np.random.seed(0)
     Npoints = 300

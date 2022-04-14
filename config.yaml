@@ -1,23 +1,24 @@
 # config.yaml
-output_folder: "train_axis_dim32_uniform01_scale1o2"
+output_folder: "train_agw_dim32_uniform01_scale1o2_woPE"
 
-# my_1d, wiggle, matern, andrew, agw, origin, axis
-dataset: "axis"
+# 1d: my_1d, wiggle, matern, andrew, agw, 
+# 2d: origin, axis
+dataset: "agw"
 remark: ""
 condition_scale: 1
-position_encoding: True
+position_encoding: False
 position_encoding_m: 3
 
 # train
-batch: 5
+batch: 100
 epochs: 40
 flow_modules: '32-32-32-32-32'
 cond_size: 1
 lr: 1.0e-3
 inputDim: 1
 add_uniform: True
-uniform_rate: 0.1
-uniform_scale: 1.2
+uniform_count: 1
+uniform_scale: 1.2 
 # eval
 sample_count: 100
 eval_data:
