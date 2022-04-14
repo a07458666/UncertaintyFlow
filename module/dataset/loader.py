@@ -1,9 +1,23 @@
 from os import path
 from torch.utils.data import Dataset
 from numpy.random import uniform, randn
-from sklearn.model_selection import train_test_split
 import numpy as np
 import torch.utils.data as data
+from os import mkdir
+
+import zipfile
+import pickle
+try:
+    import urllib
+    from urllib import urlretrieve
+except Exception:
+    import urllib.request as urllib
+from os import path
+
+import numpy as np
+from numpy.random import uniform, randn
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
 
 class MyDataset(Dataset):
     def __init__(self, x, y, transform=None):
@@ -29,6 +43,16 @@ def loadDataset(datasetName):
         X_train, y_train, X_test, y_test = load_my_1d("./dataset")
     elif (datasetName == "wiggle"):
         X_train, y_train = load_wiggle()
+    elif (datasetName == "matern"):
+        X_train, y_train = load_matern_1d("./dataset")
+    elif (datasetName == "andrew"):
+        X_train, y_train = load_andrew_1d("./dataset")
+    elif (datasetName == "agw"):
+        X_train, y_train = load_agw_1d("./dataset")
+    elif (datasetName == "origin"):
+        X_train, y_train = load_origin("./dataset")
+    elif (datasetName == "axis"):
+        X_train, y_train = load_axis("./dataset")  
     return X_train, y_train
 
 def load_my_1d(base_dir):
@@ -119,4 +143,142 @@ def load_wiggle():
     X = ((x - x_means) / x_stds).astype(np.float32)
     Y = ((y - y_means) / y_stds).astype(np.float32)
 
+    return X, Y
+
+def load_matern_1d(base_dir):
+    if not path.exists(base_dir + '/matern_data/'):
+        mkdir(base_dir + '/matern_data/')
+
+        def gen_1d_matern_data():
+            from GPy.kern.src.sde_matern import Matern32
+            np.random.seed(4)
+
+            lengthscale = 0.5
+            variance = 1.0
+            sig_noise = 0.15
+
+            n1_points = 200
+            x1 = np.random.uniform(-2, -1, n1_points)[:, None]
+
+            n2_points = 200
+            x2 = np.random.uniform(0.5, 2.5, n2_points)[:, None]
+
+            no_points = n1_points + n2_points
+            x = np.concatenate([x1, x2], axis=0)
+            x.sort(axis=0)
+
+            k = Matern32(input_dim=1, variance=variance, lengthscale=lengthscale)
+            C = k.K(x, x) + np.eye(no_points) * sig_noise ** 2
+
+            y = np.random.multivariate_normal(np.zeros((no_points)), C)[:, None]
+
+            x_means, x_stds = x.mean(axis=0), x.std(axis=0)
+            y_means, y_stds = y.mean(axis=0), y.std(axis=0)
+
+            X = ((x - x_means) / x_stds).astype(np.float32)
+            Y = ((y - y_means) / y_stds).astype(np.float32)
+
+            return X, Y
+
+        x, y = gen_1d_matern_data()
+        xy = np.concatenate([x, y], axis=1)
+        np.save(base_dir + '/matern_data/matern_1d.npy', xy)
+        return x, y
+    else:
+        xy = np.load(base_dir + '/matern_data/matern_1d.npy')
+        x = xy[:, 0]
+        x = x[:, None]
+        y = xy[:, 1]
+        y = y[:, None]
+        return x, y
+
+def load_andrew_1d(base_dir):
+    if not path.exists(base_dir + '/andrew_1d'):
+        print('base_dir does not point to data directory')
+
+    with open(base_dir + '/andrew_1d/1d_cosine_separated.pkl', 'rb') as f:
+        data = pickle.load(f)
+    x = data[:, 0]
+    x = x[:, None]
+    y = data[:, 1]
+    y = y[:, None]
+
+    x_means, x_stds = x.mean(axis=0), x.std(axis=0)
+    y_means, y_stds = y.mean(axis=0), y.std(axis=0)
+
+    X = ((x - x_means) / x_stds).astype(np.float32)
+    Y = ((y - y_means) / y_stds).astype(np.float32)
+
+    return X, Y
+
+def load_agw_1d(base_dir, get_feats=False):
+    if not path.exists(base_dir + '/agw_data'):
+        mkdir(base_dir + '/agw_data')
+        urllib.urlretrieve('https://raw.githubusercontent.com/wjmaddox/drbayes/master/experiments/synthetic_regression/ckpts/data.npy',
+                           filename=base_dir + '/agw_data/data.npy')
+
+    def features(x):
+        return np.hstack([x[:, None] / 2.0, (x[:, None] / 2.0) ** 2])
+
+    data = np.load(base_dir + '/agw_data/data.npy')
+    x, y = data[:, 0], data[:, 1]
+    y = y[:, None]
+    f = features(x)
+
+    x_means, x_stds = x.mean(axis=0), x.std(axis=0)
+    y_means, y_stds = y.mean(axis=0), y.std(axis=0)
+    f_means, f_stds = f.mean(axis=0), f.std(axis=0)
+
+    X = ((x - x_means) / x_stds).astype(np.float32)
+    Y = ((y - y_means) / y_stds).astype(np.float32)
+    F = ((f - f_means) / f_stds).astype(np.float32)
+
+    if get_feats:
+        return F, Y
+
+    return X[:, None], Y
+
+def load_origin(base_dir):
+
+    if not path.exists(base_dir + '/gap_classification'):
+        urllib.urlretrieve('https://javierantoran.github.io/assets/datasets/gap_classification.zip',
+                           filename=base_dir + '/gap_classification.zip')
+        with zipfile.ZipFile(base_dir + '/gap_classification.zip', 'r') as zip_ref:
+            zip_ref.extractall(base_dir)
+
+    file2 = base_dir + '/gap_classification/origin.pkl'
+
+    with open(file2, 'rb') as f:
+        origin_tupple = pickle.load(f)
+        origin_x = origin_tupple[0].astype(np.float32)
+        origin_y = origin_tupple[1].astype(np.float32)[:, np.newaxis]
+
+        x_means, x_stds = origin_x.mean(axis=0), origin_x.std(axis=0)
+        y_means, y_stds = origin_y.mean(axis=0), origin_y.std(axis=0)
+
+        X = ((origin_x - x_means) / x_stds).astype(np.float32)
+        Y = ((origin_y - y_means) / y_stds).astype(np.float32)
+
+    return X, Y
+
+def load_axis(base_dir):
+
+    if not path.exists(base_dir + '/gap_classification'):
+        urllib.urlretrieve('https://javierantoran.github.io/assets/datasets/gap_classification.zip',
+                           filename=base_dir + '/gap_classification.zip')
+        with zipfile.ZipFile(base_dir + '/gap_classification.zip', 'r') as zip_ref:
+            zip_ref.extractall(base_dir)
+
+    file1 = base_dir + '/gap_classification/axis.pkl'
+
+    with open(file1, 'rb') as f:
+        axis_tupple = pickle.load(f)
+        axis_x = axis_tupple[0].astype(np.float32)
+        axis_y = axis_tupple[1].astype(np.float32)[:, np.newaxis]
+
+        x_means, x_stds = axis_x.mean(axis=0), axis_x.std(axis=0)
+        y_means, y_stds = axis_y.mean(axis=0), axis_y.std(axis=0)
+
+        X = ((axis_x - x_means) / x_stds).astype(np.float32)
+        Y = ((axis_y - y_means) / y_stds).astype(np.float32)
     return X, Y
