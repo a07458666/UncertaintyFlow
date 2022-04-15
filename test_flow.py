@@ -67,7 +67,6 @@ def main(config, device, model_path):
     
     loss_fn = nn.MSELoss()
 
-    mse_list = []
     mean_list = []
     var_list = []
     x_list = []
@@ -78,20 +77,13 @@ def main(config, device, model_path):
         delta_p = torch.zeros(config["sample_count"], config["inputDim"], 1).to(x[0])
 
         approx21, delta_log_p2 = prior(input_x, condition_y, delta_p, reverse=True)
-        # mseLoss = loss_fn(x[0].expand(config["sample_count"], config["inputDim"]).unsqueeze(1), approx21)
-        # np_mse = mseLoss.item()
         np_x = float(x[0].detach().cpu().numpy()[0])
         np_var = float(torch.var(approx21).detach().cpu().numpy())
         np_mean = float(torch.mean(approx21).detach().cpu().numpy())
-        # mse_list.append(np_mse)
         x_list.append(np_x)
         var_list.append(np_var)
         mean_list.append(np_mean)
-        # if (i > 50):
-        #     break
     
-    # mseMean = sum(mse_list) / len(mse_list)
-    # print("mseMean :", mseMean)
     savePath = os.path.splitext(args.modelPath)[0] + "_var.png"
     visualize_uncertainty(savePath, gt_X.reshape(-1), gt_y.reshape(-1), x_list, mean_list, var_list)
 

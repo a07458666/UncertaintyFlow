@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 from module.flow import cnf
 from module.dataset.loader import loadDataset, MyDataset
-from module.config import checkOutputDirectoryAndCreate, loadConfig, dumpConfig
+from module.config import checkOutputDirectoryAndCreate, loadConfig, dumpConfig, showConfig
 
 try:
     import wandb
@@ -36,49 +36,36 @@ def position_encoding(x, m):
     x = np.concatenate(x_p_list, axis=1)
     return x
 
-def addUniform(input_x, condition_y, uniform_count, X_mean, y_mean, X_var, y_var):
-    X_uniform = np.random.uniform(X_mean - (3 * X_var), X_mean + (3 * X_var), uniform_count).reshape(-1, 1, 1)
-    y_uniform = np.random.uniform(y_mean - (3 * y_var), y_mean + (3 * y_var), uniform_count).reshape(-1, 1, 1)
+def addUniform(input_y, condition_X, uniform_count, X_mean, y_mean, X_var, y_var, config):
+    var_scale = config["var_scale"]
+    X_uniform = np.random.uniform(X_mean - (var_scale * X_var), X_mean + (var_scale * X_var), uniform_count).reshape(-1, 1, 1)
+    y_uniform = np.random.uniform(y_mean - (var_scale * y_var), y_mean + (var_scale * y_var), uniform_count).reshape(-1, 1, 1)
+    if config["position_encoding"]:
+        X_uniform = position_encoding(X_uniform, config["position_encoding_m"]).reshape(-1, 1, 1 + (config["position_encoding_m"] * 2))
     X_uniform = torch.Tensor(X_uniform).to(device)
     y_uniform = torch.Tensor(y_uniform).to(device)
-    # print("x size ", X_uniform.size())
+
     # print("y size ", y_uniform.size())
-    # print("input_x size ", input_x.size())
-    # print("condition_y size ", condition_y.size())
-    input_x = torch.cat((X_uniform, input_x), 0)
-    condition_y = torch.cat((y_uniform, condition_y), 0)
-    return input_x, condition_y
+    # print("x size ", X_uniform.size())
+    # print("input_y size ", input_y.size())
+    # print("condition_X size ", condition_X.size())
+    condition_X = torch.cat((X_uniform, condition_X), 0)
+    input_y = torch.cat((y_uniform, input_y), 0)
+    return input_y, condition_X
 
 def main(config, device):
-    torch.manual_seed(0)
-
+    torch.manual_seed(config["time_seed"])
+    batch_size = config["batch"]
     X_train, y_train = loadDataset(config["dataset"])
     if (config["add_uniform"]):
         X_mean = X_train.mean()
-        y_mean = X_train.mean()
+        y_mean = y_train.mean()
         X_var = X_train.var()
-        y_var = X_train.var()
-        uniform_count = config["uniform_count"]
+        y_var = y_train.var()
+        uniform_count = int(config["batch"] * config["uniform_rate"])
+        batch_size -= config["uniform_count"]
         print("X mean :", X_mean, "y mean :", y_mean,"X var :", X_var,"y var :", y_var)
-    # if (config["add_uniform"]):
-    #     print("add_uniform data")
-    #     print("uniform count : ", int(X_train.shape[0] * config["uniform_rate"]))
-    #     print("uniform X rane : ", X_train.max(), X_train.min())
-    #     print("uniform y rane : ", y_train.max(), y_train.min())
-    #     print("X_train.shape", X_train.shape)
-    #     print("X_train[:10]", X_train[:10])
-    #     print("y_train.shape", y_train.shape)
-    #     print("y_train[:10]", y_train[:10])
-    #     uniform_count = int(X_train.shape[0] * config["uniform_rate"])
-    #     x_max = X_train.max() * config["uniform_scale"]
-    #     x_min = X_train.min() * config["uniform_scale"]
-    #     y_max = y_train.max() * config["uniform_scale"]
-    #     y_min = y_train.min() * config["uniform_scale"]
-    #     X_uniform = np.random.uniform(x_min, x_max, uniform_count).reshape(-1, 1)
-    #     y_uniform = np.random.uniform(y_min, y_max, uniform_count).reshape(-1, 1)
-    #     X_train = np.concatenate([X_uniform, X_train])
-    #     y_train = np.concatenate([y_uniform, y_train])
-
+        
     if config["position_encoding"]:
         X_train = position_encoding(X_train, config["position_encoding_m"])
     
@@ -92,26 +79,24 @@ def main(config, device):
 
     print("shape = ", X_train.shape, y_train.shape)
     trainset = MyDataset(torch.Tensor(X_train).to(device), torch.Tensor(y_train).to(device), transform=None)
-    train_loader = data.DataLoader(trainset, shuffle=True, batch_size=config["batch"], drop_last = True)
+    train_loader = data.DataLoader(trainset, shuffle=True, batch_size=batch_size, drop_last = True)
     optimizer = optim.Adam(prior.parameters(), lr=config["lr"])
 
     with tqdm(range(config["epochs"])) as pbar:
         for epoch in pbar:
             for i, x in enumerate(train_loader):
-                input_x = x[1].unsqueeze(1)
-                condition_y = x[0].unsqueeze(1)
+                input_y = x[1].unsqueeze(1)
+                condition_X = x[0].unsqueeze(1)
                 if (config["add_uniform"]):
-                    input_x, condition_y = addUniform(input_x, condition_y, uniform_count, X_mean, y_mean, X_var, y_var)
-                    print("input_x", input_x.size())
-                    print("condition_y", condition_y.size())
+                    input_y, condition_X = addUniform(input_y, condition_X, uniform_count, X_mean, y_mean, X_var, y_var, config)
 
-                delta_p = torch.zeros(input_x.size()[0], config["inputDim"], 1).to(input_x)
+                delta_p = torch.zeros(input_y.size()[0], config["inputDim"], 1).to(input_y)
 
-                approx21, delta_log_p2 = prior(input_x, condition_y, delta_p)
+                approx21, delta_log_p2 = prior(input_y, condition_X, delta_p)
 
-                approx2 = standard_normal_logprob(approx21).view(input_x.size()[0], -1).sum(1, keepdim=True)
+                approx2 = standard_normal_logprob(approx21).view(input_y.size()[0], -1).sum(1, keepdim=True)
               
-                delta_log_p2 = delta_log_p2.view(input_x.size()[0], config["inputDim"], 1).sum(1)
+                delta_log_p2 = delta_log_p2.view(input_y.size()[0], config["inputDim"], 1).sum(1)
                 log_p2 = (approx2 - delta_log_p2)
 
                 loss = -log_p2.mean()
@@ -138,13 +123,18 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Uncertainty trainer")
     parser.add_argument("--config", type=str)
     parser.add_argument("--gpu", type=str, default="0")
+    parser.add_argument("--output_folder", type=str, default="")
     args = parser.parse_args()
 
     # config
     config = loadConfig(args.config)
+    if (args.output_folder != ""):
+        config["output_folder"] = args.output_folder
+
+    # save config
     checkOutputDirectoryAndCreate(config["output_folder"])
     dumpConfig(config)
-    print("config : ", config)
+    showConfig(config)
 
     # wandb
     os.environ["WANDB_WATCH"] = "false"
@@ -156,6 +146,7 @@ if __name__ == '__main__':
     if (args.gpu != ""):
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     device = torch.device("cuda" if torch.cuda.is_available() and args.gpu != "-1" else "cpu")
+
     # main
     main(config, device)
     
