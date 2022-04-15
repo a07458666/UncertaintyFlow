@@ -63,7 +63,7 @@ def main(config, device):
         X_var = X_train.var()
         y_var = y_train.var()
         uniform_count = int(config["batch"] * config["uniform_rate"])
-        batch_size -= config["uniform_count"]
+        batch_size -= uniform_count
         print("X mean :", X_mean, "y mean :", y_mean,"X var :", X_var,"y var :", y_var)
         
     if config["position_encoding"]:
