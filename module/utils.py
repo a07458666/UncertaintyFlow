@@ -376,3 +376,12 @@ def validate(test_loader, model, epoch, writer, save_dir, args, clf_loaders=None
         if writer is not None and v is not None:
             writer.add_scalar('val_conditioned/%s' % k, v, epoch)
 
+# Uncertainty utils
+
+def position_encode(X, m=3, axis=1):
+    x_p_list = [X]
+    for i in range(m):
+        x_p_list.append(np.sin((2**(i+1)) * X))
+        x_p_list.append(np.cos((2**(i+1)) * X))
+    return np.concatenate(x_p_list, axis=axis)
+

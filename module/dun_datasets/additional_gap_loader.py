@@ -12,7 +12,7 @@ from numpy.random import uniform, randn
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 
-from .utils import mkdir
+from os import mkdir
 
 
 def load_axis(base_dir='./dun_datasets/data/'):
@@ -223,7 +223,7 @@ def load_my_1d(base_dir='./dun_datasets/data/'):
     return X_train, y_homo_train, X_test, y_homo_test
 
 
-def load_wiggle():
+def load_wiggle_1d():
 
     np.random.seed(0)
     Npoints = 300

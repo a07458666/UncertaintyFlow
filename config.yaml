@@ -7,8 +7,8 @@ output_folder: "train_my_1d_batch_sample"
 dataset: "my_1d"
 remark: ""
 condition_scale: 1
-position_encoding: True
-position_encoding_m: 2
+position_encode: True
+position_encode_m: 2
 var_scale: 10
 # train
 batch: 100

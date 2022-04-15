@@ -29,14 +29,6 @@ def sortData(x, y):
     x_sorted, y_sorted = zip(*sorted(zip(x, y)))
     return np.asarray(x_sorted), np.asarray(y_sorted)
 
-def position_encoding(x, m):
-    x_p_list = [x]
-    for i in range(m):
-        x_p_list.append(np.sin((2**(i+1)) * x))
-        x_p_list.append(np.cos((2**(i+1)) * x))
-    x = np.concatenate(x_p_list, axis=1)
-    return x
-
 def main(config, device, model_path):
     torch.manual_seed(0)
     var_scale = config["var_scale"]
@@ -46,16 +38,16 @@ def main(config, device, model_path):
     X_eval = np.linspace(gt_X.mean() - (var_scale * gt_X.var()), gt_X.mean() + (var_scale * gt_X.var()), config["eval_data"]["count"]).reshape(-1, 1)
     y_eval = np.linspace(0, 0, config["eval_data"]["count"]).reshape(-1, 1)
     
-    if config["position_encoding"]:
-        X_eval = position_encoding(X_eval, config["position_encoding_m"])
+    if config["position_encode"]:
+        X_eval = position_encode(X_eval, config["position_encode_m"])
 
     if config["condition_scale"] != 1:
         X_eval = X_eval * config["condition_scale"]
         gt_X = gt_X * config["condition_scale"]
 
     cond_size = config["cond_size"]
-    if config["position_encoding"]:
-        cond_size += (config["position_encoding_m"] * 2)
+    if config["position_encode"]:
+        cond_size += (config["position_encode_m"] * 2)
 
     prior = cnf(config["inputDim"], config["flow_modules"], cond_size, 1)
     prior.load_state_dict(torch.load(model_path))

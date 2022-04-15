@@ -11,7 +11,8 @@ except Exception:
 import numpy as np
 import pandas as pd
 
-from .utils import mkdir
+from os import mkdir
+
 
 
 def load_official_flight(base_dir='./dun_datasets/data/', k800=False):

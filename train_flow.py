@@ -14,7 +14,8 @@ from math import log, pi
 from tqdm import tqdm
 
 from module.flow import cnf
-from module.dataset.loader import loadDataset, MyDataset
+from module.utils import standard_normal_logprob, position_encode
+from module.dun_datasets.loader import loadDataset, MyDataset
 from module.config import checkOutputDirectoryAndCreate, loadConfig, dumpConfig, showConfig
 
 try:
@@ -23,25 +24,12 @@ except ImportError:
     wandb = None
     logger.info("Install Weights & Biases for experiment logging via 'pip install wandb' (recommended)")
 
-def standard_normal_logprob(z):
-    dim = z.size(-1)
-    log_z = -0.5 * dim * log(2 * pi)
-    return log_z - z.pow(2) / 2
-
-def position_encoding(x, m):
-    x_p_list = [x]
-    for i in range(m):
-        x_p_list.append(np.sin((2**(i+1)) * x))
-        x_p_list.append(np.cos((2**(i+1)) * x))
-    x = np.concatenate(x_p_list, axis=1)
-    return x
-
 def addUniform(input_y, condition_X, uniform_count, X_mean, y_mean, X_var, y_var, config):
     var_scale = config["var_scale"]
     X_uniform = np.random.uniform(X_mean - (var_scale * X_var), X_mean + (var_scale * X_var), uniform_count).reshape(-1, 1, 1)
     y_uniform = np.random.uniform(y_mean - (var_scale * y_var), y_mean + (var_scale * y_var), uniform_count).reshape(-1, 1, 1)
-    if config["position_encoding"]:
-        X_uniform = position_encoding(X_uniform, config["position_encoding_m"]).reshape(-1, 1, 1 + (config["position_encoding_m"] * 2))
+    if config["position_encode"]:
+        X_uniform = position_encode(X_uniform, config["position_encode_m"]).reshape(-1, 1, 1 + (config["position_encode_m"] * 2))
     X_uniform = torch.Tensor(X_uniform).to(device)
     y_uniform = torch.Tensor(y_uniform).to(device)
 
@@ -66,15 +54,15 @@ def main(config, device):
         batch_size -= uniform_count
         print("X mean :", X_mean, "y mean :", y_mean,"X var :", X_var,"y var :", y_var)
         
-    if config["position_encoding"]:
-        X_train = position_encoding(X_train, config["position_encoding_m"])
+    if config["position_encode"]:
+        X_train = position_encode(X_train, config["position_encode_m"])
     
     if config["condition_scale"] != 1:
         X_train = X_train * config["condition_scale"]
 
     cond_size = config["cond_size"]
-    if config["position_encoding"]:
-        cond_size += (config["position_encoding_m"] * 2)
+    if config["position_encode"]:
+        cond_size += (config["position_encode_m"] * 2)
     prior = cnf(config["inputDim"], config["flow_modules"], cond_size, 1)
 
     print("shape = ", X_train.shape, y_train.shape)
