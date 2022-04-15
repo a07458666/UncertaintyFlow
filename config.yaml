@@ -1,14 +1,14 @@
 # config.yaml
-output_folder: "train_agw_dim32_uniform01_scale1o2_woPE"
+output_folder: "train_my_1d_batch_sample"
 
 # 1d: my_1d, wiggle, matern, andrew, agw, 
 # 2d: origin, axis
-dataset: "agw"
+dataset: "my_1d"
 remark: ""
 condition_scale: 1
-position_encoding: False
-position_encoding_m: 3
-
+position_encoding: True
+position_encoding_m: 2
+var_scale: 10
 # train
 batch: 100
 epochs: 40
@@ -17,11 +17,8 @@ cond_size: 1
 lr: 1.0e-3
 inputDim: 1
 add_uniform: True
-uniform_count: 1
-uniform_scale: 1.2 
+uniform_rate: 0.1
 # eval
-sample_count: 100
+sample_count: 300
 eval_data:
   count: 300
-  max: 3.0
-  min: -3.0

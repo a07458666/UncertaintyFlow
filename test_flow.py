@@ -16,7 +16,7 @@ from tqdm import tqdm
 
 from module.flow import cnf
 from module.dataset.loader import loadDataset, MyDataset
-from module.config import loadConfig
+from module.config import loadConfig, showConfig
 from module.visualize import visualize_uncertainty
 
 try:
@@ -39,11 +39,11 @@ def position_encoding(x, m):
 
 def main(config, device, model_path):
     torch.manual_seed(0)
-
+    var_scale = config["var_scale"]
     gt_X, gt_y = loadDataset(config["dataset"])
     gt_X, gt_y = sortData(gt_X, gt_y)
-
-    X_eval = np.linspace(config["eval_data"]["min"], config["eval_data"]["max"], config["eval_data"]["count"]).reshape(-1, 1)
+    
+    X_eval = np.linspace(gt_X.mean() - (var_scale * gt_X.var()), gt_X.mean() + (var_scale * gt_X.var()), config["eval_data"]["count"]).reshape(-1, 1)
     y_eval = np.linspace(0, 0, config["eval_data"]["count"]).reshape(-1, 1)
     
     if config["position_encoding"]:
@@ -107,7 +107,7 @@ if __name__ == '__main__':
     if (args.config == ""):
         args.config = os.path.dirname(args.modelPath) + "/config.yaml"
     config = loadConfig(args.config)
-    print("config : ", config)
+    showConfig(config)
 
     if (args.gpu != ""):
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
