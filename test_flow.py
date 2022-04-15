@@ -15,6 +15,7 @@ from math import log, pi
 from tqdm import tqdm
 
 from module.flow import cnf
+from module.utils import standard_normal_logprob, position_encode
 from module.dun_datasets.loader import loadDataset, MyDataset
 from module.config import loadConfig, showConfig
 from module.visualize import visualize_uncertainty
