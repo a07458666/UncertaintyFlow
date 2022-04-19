@@ -3,7 +3,7 @@
 /result/
 /dataset/**/*.txt
 /dataset/*
-
+/.vscode/
 *.pyc
 /lightning_logs/
 /.ipynb_checkpoints/
