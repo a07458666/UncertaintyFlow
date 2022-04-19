@@ -7,9 +7,9 @@ output_folder: "train_my_1d_batch_sample"
 dataset: "my_1d"
 remark: ""
 condition_scale: 1
-position_encode: True
-position_encode_m: 2
-var_scale: 10
+position_encode: False
+position_encode_m: 5
+var_scale: 8
 # train
 batch: 100
 epochs: 40
@@ -20,6 +20,6 @@ inputDim: 1
 add_uniform: True
 uniform_rate: 0.1
 # eval
-sample_count: 300
+sample_count: 100
 eval_data:
-  count: 300
+  count: 100
