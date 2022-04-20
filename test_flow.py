@@ -32,13 +32,14 @@ def sortData(x, y):
     return np.asarray(x_sorted), np.asarray(y_sorted)
 
 def main(config, device, model_path):
-    show_range = 10
+    show_range = 5 * config["condition_scale"]
     torch.manual_seed(0)
     var_scale = config["var_scale"]
     gt_X, gt_y = loadDataset(config["dataset"])
     gt_X, gt_y = sortData(gt_X, gt_y)
     
     # X_eval = np.linspace(gt_X.mean() - (var_scale * gt_X.var()), gt_X.mean() + (var_scale * gt_X.var()), config["eval_data"]["count"]).reshape(-1, 1)
+    config["eval_data"]["count"] *= config["condition_scale"]
     X_eval = np.linspace(-show_range, show_range, config["eval_data"]["count"]).reshape(-1, 1)
     y_eval = np.linspace(0, 0, config["eval_data"]["count"]).reshape(-1, 1)
     
@@ -53,7 +54,10 @@ def main(config, device, model_path):
     if config["position_encode"]:
         cond_size += (config["position_encode_m"] * 2)
 
-    prior = cnf(config["inputDim"], config["flow_modules"], cond_size, 1)
+    if config["linear_encode"]:
+        prior = cnf(config["inputDim"], config["flow_modules"], cond_size, 1, config["linear_encode_m"])
+    else:
+        prior = cnf(config["inputDim"], config["flow_modules"], cond_size, 1)
     prior.load_state_dict(torch.load(model_path))
     prior.eval()
     

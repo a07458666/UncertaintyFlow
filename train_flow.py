@@ -27,7 +27,12 @@ except ImportError:
 def main(config, device):
     torch.manual_seed(config["time_seed"])
     batch_size = config["batch"]
+    cond_size = config["cond_size"]
     X_train, y_train = loadDataset(config["dataset"])
+
+    if config["condition_scale"] != 1:
+        X_train = X_train * config["condition_scale"] 
+
     if (config["add_uniform"]):
         X_mean = X_train.mean()
         y_mean = y_train.mean()
@@ -36,18 +41,15 @@ def main(config, device):
         uniform_count = int(config["batch"] * config["uniform_rate"])
         batch_size -= uniform_count
         print("X mean :", X_mean, "y mean :", y_mean,"X var :", X_var,"y var :", y_var)
-        
+
     if config["position_encode"]:
         X_train = position_encode(X_train, config["position_encode_m"])
-    
-    if config["condition_scale"] != 1:
-        X_train = X_train * config["condition_scale"]
-
-    cond_size = config["cond_size"]
-    if config["position_encode"]:
         cond_size += (config["position_encode_m"] * 2)
-    prior = cnf(config["inputDim"], config["flow_modules"], cond_size, 1)
 
+    if config["linear_encode"]:
+        prior = cnf(config["inputDim"], config["flow_modules"], cond_size, 1, config["linear_encode_m"])
+    else:
+        prior = cnf(config["inputDim"], config["flow_modules"], cond_size, 1)
     print("shape = ", X_train.shape, y_train.shape)
     trainset = MyDataset(torch.Tensor(X_train).to(device), torch.Tensor(y_train).to(device), transform=None)
     train_loader = data.DataLoader(trainset, shuffle=True, batch_size=batch_size, drop_last = True)

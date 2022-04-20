@@ -391,8 +391,8 @@ def addUniform(input_y, condition_X, uniform_count, X_mean, y_mean, X_var, y_var
     y_uniform = np.random.uniform(y_mean - (var_scale * y_var), y_mean + (var_scale * y_var), uniform_count).reshape(-1, 1, 1)
     if config["position_encode"]:
         X_uniform = position_encode(X_uniform, config["position_encode_m"]).reshape(-1, 1, 1 + (config["position_encode_m"] * 2))
-    X_uniform = torch.Tensor(X_uniform).to(device)
-    y_uniform = torch.Tensor(y_uniform).to(device)
+    X_uniform = torch.Tensor(X_uniform).to(condition_X)
+    y_uniform = torch.Tensor(y_uniform).to(input_y)
 
     condition_X = torch.cat((X_uniform, condition_X), 0)
     input_y = torch.cat((y_uniform, input_y), 0)

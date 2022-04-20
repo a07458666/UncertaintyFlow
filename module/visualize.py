@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-show_range = 10
+show_range = 5
 ylim = 3
 # Visualize the result
 def visualize_uncertainty(savePath, gt_x, gt_y, xdata, mean, var):

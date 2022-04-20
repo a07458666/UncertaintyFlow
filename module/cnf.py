@@ -5,15 +5,6 @@ from torchdiffeq import odeint as odeint_normal
 
 __all__ = ["CNF", "SequentialFlow"]
 
-# def _dropoutCondition(X, condition_pose, drop_prob):
-#     X = X.float()
-#     assert 0 <= condition_pose < X.shape[0]
-#     assert 0 <= drop_prob <= 1
-#     keep_prob = 1. - drop_prob
-#     mask = torch.ones(X.shape).to(X)
-#     mask[condition_pose] = (torch.randn(1) < keep_prob).float()
-#     return X * mask * (torch.tensor(X.shape[0]).to(X) / torch.sum(mask))
-
 class SequentialFlow(nn.Module):
     """A generalized nn.Sequential container for normalizing flows."""
 
@@ -37,11 +28,6 @@ class SequentialFlow(nn.Module):
             for i in inds:
                 x, logpx = self.chain[i](x, context, logpx, integration_times, reverse)
             return x, logpx
-
-    def setConditional(self, conditional):
-        for cnf in self.chain:
-            if (type(cnf).__name__ == "CNF"):
-                cnf.setConditional(conditional)
 
 class CNF(nn.Module):
     def __init__(self, odefunc, conditional=True, T=1.0, train_T=False, regularization_fns=None,
@@ -74,12 +60,12 @@ class CNF(nn.Module):
 
         if self.conditional:
             assert context is not None
-            # if (False):
-            #     _dropoutCondition(context, 0, 0.5)
             states = (x, _logpx, context)
+            # print("=== x : ", x[:10])
+            # print("_logpx : ", _logpx[:10])
+            # print("context : ", context[:10])
             atol = self.atol
             rtol = self.rtol
-            # print("conditional")
         else:
             states = (x, _logpx)
             atol = self.atol
@@ -136,9 +122,6 @@ class CNF(nn.Module):
 
     def num_evals(self):
         return self.odefunc._num_evals.item()
-    
-    def setConditional(self, conditional):
-        self.conditional = conditional
 
 
 def _flip(x, dim):

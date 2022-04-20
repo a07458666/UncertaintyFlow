@@ -9,7 +9,10 @@ remark: ""
 condition_scale: 1
 position_encode: False
 position_encode_m: 5
-var_scale: 8
+# linear_encode
+linear_encode: False
+linear_encode_m : 50
+var_scale: 3
 # train
 batch: 100
 epochs: 40
@@ -17,7 +20,7 @@ flow_modules: '32-32-32-32-32'
 cond_size: 1
 lr: 1.0e-3
 inputDim: 1
-add_uniform: True
+add_uniform: False
 uniform_rate: 0.1
 # eval
 sample_count: 100

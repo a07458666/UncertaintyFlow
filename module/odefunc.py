@@ -61,7 +61,7 @@ class ODEnet(nn.Module):
     Helper class to make neural nets for use in continuous normalizing flows
     """
 
-    def __init__(self, hidden_dims, input_shape, context_dim, layer_type="concat", nonlinearity="softplus"):
+    def __init__(self, hidden_dims, input_shape, context_dim, layer_type="concat", nonlinearity="softplus", context_encode_dim = 0):
         super(ODEnet, self).__init__()
         base_layer = {
             "ignore": diffeq_layers.IgnoreLinear,
@@ -78,11 +78,24 @@ class ODEnet(nn.Module):
         activation_fns = []
         hidden_shape = input_shape
 
+        self.linear_encode = False
+        if (context_encode_dim > 0): 
+            self.linear_encode = True
+
         for dim_out in (hidden_dims + (input_shape[0],)):
 
             layer_kwargs = {}
-            layer = base_layer(hidden_shape[0], dim_out, context_dim, **layer_kwargs)
-            layers.append(layer)
+            # context add linear layer
+            if (context_encode_dim > 0):
+                layer_encode = diffeq_layers.IgnoreLinear(context_dim, context_encode_dim, 0, **layer_kwargs)
+                layers.append(layer_encode)
+                activation_fns.append(NONLINEARITIES[nonlinearity])
+
+                layer = base_layer(hidden_shape[0], dim_out, context_encode_dim, **layer_kwargs)
+                layers.append(layer)
+            else :
+                layer = base_layer(hidden_shape[0], dim_out, context_dim, **layer_kwargs)
+                layers.append(layer)
             activation_fns.append(NONLINEARITIES[nonlinearity])
 
             hidden_shape = list(copy.copy(hidden_shape))
@@ -94,10 +107,22 @@ class ODEnet(nn.Module):
     def forward(self, context, y):
         dx = y
         for l, layer in enumerate(self.layers):
-            dx = layer(context, dx)
-            # if not last layer, use nonlinearity
-            if l < len(self.layers) - 1:
-                dx = self.activation_fns[l](dx)
+            if self.linear_encode:
+                if isinstance(layer, diffeq_layers.IgnoreLinear):
+                    c = torch.narrow(context, 1, 1, context.size(1) - 1)
+                    t = torch.narrow(context, 1, 0, 1)
+                    encode = layer(c, c)
+                    context_encode = torch.cat([t, encode.view(t.size(0), -1)], dim=1)
+                else:
+                    dx = layer(context_encode, dx)
+                    # if not last layer, use nonlinearity
+                    if l < len(self.layers) - 1:
+                        dx = self.activation_fns[l](dx)
+            else:
+                dx = layer(context, dx)
+                # if not last layer, use nonlinearity
+                if l < len(self.layers) - 1:
+                    dx = self.activation_fns[l](dx)
         return dx
 
 
@@ -127,12 +152,9 @@ class ODEfunc(nn.Module):
             if len(states) == 3:  # conditional CNF
 
                 c = states[2]
-
                 tc = torch.cat([t, c.view(y.size(0), -1)], dim=1)
-
                 dy = self.diffeq(tc, y)
                 divergence = self.divergence_fn(dy, y, e=self._e).unsqueeze(-1)
-
                 return dy, -divergence, torch.zeros_like(c).requires_grad_(True)
             elif len(states) == 2:  # unconditional CNF
                 dy = self.diffeq(t, y)
