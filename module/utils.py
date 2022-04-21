@@ -397,3 +397,7 @@ def addUniform(input_y, condition_X, uniform_count, X_mean, y_mean, X_var, y_var
     condition_X = torch.cat((X_uniform, condition_X), 0)
     input_y = torch.cat((y_uniform, input_y), 0)
     return input_y, condition_X
+
+def sortData(x, y):
+    x_sorted, y_sorted = zip(*sorted(zip(x, y)))
+    return np.asarray(x_sorted), np.asarray(y_sorted)

@@ -3,19 +3,11 @@ import torch
 from torch import nn, optim
 from torch.utils import data
 
-import torchvision.datasets as dset
-import torchvision.transforms as transforms
-
 import os
 import numpy as np
-import random
 import argparse
-from math import log, pi
-from tqdm import tqdm
 
-from module.flow import cnf
-from module.utils import standard_normal_logprob, position_encode, addUniform
-from module.dun_datasets.loader import loadDataset, MyDataset
+from trainer import UncertaintyTrainer
 from module.config import checkOutputDirectoryAndCreate, loadConfig, dumpConfig, showConfig
 
 try:
@@ -25,71 +17,9 @@ except ImportError:
     logger.info("Install Weights & Biases for experiment logging via 'pip install wandb' (recommended)")
 
 def main(config, device):
-    torch.manual_seed(config["time_seed"])
-    batch_size = config["batch"]
-    cond_size = config["cond_size"]
-    X_train, y_train = loadDataset(config["dataset"])
-
-    if config["condition_scale"] != 1:
-        X_train = X_train * config["condition_scale"] 
-
-    if (config["add_uniform"]):
-        X_mean = X_train.mean()
-        y_mean = y_train.mean()
-        X_var = X_train.var()
-        y_var = y_train.var()
-        uniform_count = int(config["batch"] * config["uniform_rate"])
-        batch_size -= uniform_count
-        print("X mean :", X_mean, "y mean :", y_mean,"X var :", X_var,"y var :", y_var)
-
-    if config["position_encode"]:
-        X_train = position_encode(X_train, config["position_encode_m"])
-        cond_size += (config["position_encode_m"] * 2)
-
-    if config["linear_encode"]:
-        prior = cnf(config["inputDim"], config["flow_modules"], cond_size, 1, config["linear_encode_m"])
-    else:
-        prior = cnf(config["inputDim"], config["flow_modules"], cond_size, 1)
-    print("shape = ", X_train.shape, y_train.shape)
-    trainset = MyDataset(torch.Tensor(X_train).to(device), torch.Tensor(y_train).to(device), transform=None)
-    train_loader = data.DataLoader(trainset, shuffle=True, batch_size=batch_size, drop_last = True)
-    optimizer = optim.Adam(prior.parameters(), lr=config["lr"])
-
-    with tqdm(range(config["epochs"])) as pbar:
-        for epoch in pbar:
-            for i, x in enumerate(train_loader):
-                input_y = x[1].unsqueeze(1)
-                condition_X = x[0].unsqueeze(1)
-                if (config["add_uniform"]):
-                    input_y, condition_X = addUniform(input_y, condition_X, uniform_count, X_mean, y_mean, X_var, y_var, config)
-
-                delta_p = torch.zeros(input_y.size()[0], config["inputDim"], 1).to(input_y)
-
-                approx21, delta_log_p2 = prior(input_y, condition_X, delta_p)
-
-                approx2 = standard_normal_logprob(approx21).view(input_y.size()[0], -1).sum(1, keepdim=True)
-              
-                delta_log_p2 = delta_log_p2.view(input_y.size()[0], config["inputDim"], 1).sum(1)
-                log_p2 = (approx2 - delta_log_p2)
-
-                loss = -log_p2.mean()
-
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-
-                pbar.set_description(
-                    f'logP: {loss:.5f}')
-
-                if (wandb != None):
-                    logMsg = {}
-                    logMsg["epoch"] = epoch
-                    logMsg["loss"] = loss
-                    wandb.log(logMsg)
-                    wandb.watch(prior,log = "all", log_graph=True)  
-
-            torch.save(prior.state_dict(), f'result/{config["output_folder"]}/flow_{str(epoch).zfill(2)}.pt')
-        torch.save(prior.state_dict(), f'result/{config["output_folder"]}/flow_last.pt')
+    trainer = UncertaintyTrainer(config, device)
+    trainer.fit(config)
+    trainer.save(f'result/{config["output_folder"]}/flow_last.pt')
 
 if __name__ == '__main__':
     # args
