@@ -16,7 +16,7 @@ except ImportError:
     wandb = None
     logger.info("Install Weights & Biases for experiment logging via 'pip install wandb' (recommended)")
 
-def main(config, device):
+def main(config, device):    
     trainer = UncertaintyTrainer(config, device)
     trainer.fit()
     trainer.save(f'result/{config["output_folder"]}/flow_last.pt')

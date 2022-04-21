@@ -10,6 +10,7 @@ from module.flow import cnf
 from module.utils import standard_normal_logprob, position_encode, addUniform, sortData
 from module.dun_datasets.loader import loadDataset, MyDataset
 from module.visualize import visualize_uncertainty
+from condition_sampler.flow_sampler import FlowSampler
 
 try:
     import wandb
@@ -26,9 +27,9 @@ class UncertaintyTrainer:
         self.batch_size = self.config["batch"]
         self.cond_size = self.config["cond_size"]
 
-        self.loadDataset(self.config)
-        self.creatModel(self.config)
-        self.defOptimizer(self.config)
+        self.loadDataset()
+        self.creatModel()
+        self.defOptimizer()
         return
 
     def loadDataset(self) -> None:
@@ -53,7 +54,6 @@ class UncertaintyTrainer:
         self.y_train = y_train
         trainset = MyDataset(torch.Tensor(X_train).to(self.device), torch.Tensor(y_train).to(self.device), transform=None)
         self.train_loader = data.DataLoader(trainset, shuffle=True, batch_size=self.batch_size, drop_last = True)
-
         return
 
     def creatModel(self) -> None:
@@ -114,7 +114,8 @@ class UncertaintyTrainer:
         )
 
     def load(self, path) -> None:
-        self.prior.load_state_dict(torch.load(path, map_location=self.gpu))
+        self.prior.load_state_dict(torch.load(path))
+        # self.prior.load_state_dict(torch.load(path, map_location=self.gpu))
 
 
     def loadEvalDataset(self):

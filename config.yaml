@@ -7,7 +7,7 @@ output_folder: "train_my_1d_batch_sample"
 dataset: "my_1d"
 remark: ""
 condition_scale: 1
-position_encode: False
+position_encode: True
 position_encode_m: 5
 # linear_encode
 linear_encode: False
@@ -15,7 +15,7 @@ linear_encode_m : 50
 var_scale: 3
 # train
 batch: 100
-epochs: 40
+epochs: 100
 flow_modules: '32-32-32-32-32'
 cond_size: 1
 lr: 1.0e-3

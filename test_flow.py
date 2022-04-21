@@ -14,6 +14,7 @@ except ImportError:
 
 def main(config, device, model_path):
     trainer = UncertaintyTrainer(config, device)
+    trainer.load(model_path)
     trainer.loadEvalDataset()
     trainer.sample()
 
