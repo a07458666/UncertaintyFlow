@@ -18,7 +18,7 @@ except ImportError:
 
 def main(config, device):
     trainer = UncertaintyTrainer(config, device)
-    trainer.fit(config)
+    trainer.fit()
     trainer.save(f'result/{config["output_folder"]}/flow_last.pt')
 
 if __name__ == '__main__':

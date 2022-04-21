@@ -25,4 +25,4 @@ uniform_rate: 0.1
 # eval
 sample_count: 100
 eval_data:
-  count: 100
+  count: 300
