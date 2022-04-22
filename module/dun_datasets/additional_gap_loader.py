@@ -12,7 +12,7 @@ from numpy.random import uniform, randn
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 
-from os import mkdir
+from .utils import mkdir
 
 
 def load_axis(base_dir='./dun_datasets/data/'):

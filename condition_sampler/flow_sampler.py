@@ -22,11 +22,15 @@ class PModel:
 
     @staticmethod
     def prob(z):
-        return 1/(2*pi)**0.5 * torch.exp(-((z*z)/2))
+        return 1/(2*pi)**0.5 * np.exp(-((z*z)/2))
 
     @staticmethod
     def invcdf(q):
         return norm.ppf(q)
+
+    @staticmethod
+    def sample(shape) -> np.ndarray:
+        return np.random.normal(0, 1, shape)
 
 
 class FlowSampler:
@@ -77,14 +81,7 @@ class FlowSampler:
 
         for i in tqdm(range(epoch)):
             for x in train_loader:
-                x = x.view(x.size()[0], 1, -1)
-                z, delta_log_p = self.prior(x, torch.zeros(x.size()[0], 1, 1).to(x), torch.zeros(x.size()).to(x))
-                
-                log_p_z = self.pmodel.logprob(z).view(x.shape[0], -1).sum(1, keepdim=True)
-                delta_log_p = delta_log_p.view(x.shape[0], 1, 1).sum(1)
-                log_p_x = (log_p_z - delta_log_p)
-
-                loss = - log_p_x.mean()
+                loss =  - self.__logp(x).mean()
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -114,18 +111,29 @@ class FlowSampler:
         self.prior.load_state_dict(torch.load(path, map_location=self.gpu))
 
 
-    def sample(self, n=1) -> np.ndarray:
+    def sample(self, n=1) -> torch.Tensor:
         self.prior.eval()
 
         with torch.no_grad():
-            u = np.random.uniform(0, 1, (n, self.input_dim))
-            u_t = 1 / (1 + np.exp(-50 * u + 25))
-            z = self.pmodel.invcdf(u_t)
-
-            # z = np.random.normal(0, 1, (n, self.input_dim))
-
+            z = self.pmodel.sample((n, self.input_dim))
             z = torch.tensor(z).float().to(self.gpu)
             x = self.prior(z, torch.zeros(n, 1, 1).to(z), reverse=True)
 
             return x.view((-1,)+self.shape)
-    
+
+
+    def logprob(self, x) -> torch.Tensor:
+        self.prior.eval()
+
+        with torch.no_grad():
+            return self.__logp(x)
+
+
+    def __logp(self, x) -> torch.Tensor:
+        x = x.view(x.size()[0], 1, -1)
+        z, delta_log_p = self.prior(x, torch.zeros(x.size()[0], 1, 1).to(x), torch.zeros(x.size()).to(x))
+        
+        log_p_z = self.pmodel.logprob(z).view(x.shape[0], -1).sum(1, keepdim=True)
+        delta_log_p = delta_log_p.view(x.shape[0], 1, 1).sum(1)
+        log_p_x = (log_p_z - delta_log_p)
+        return log_p_x

@@ -3,7 +3,6 @@ from torch.utils.data import Dataset
 from numpy.random import uniform, randn
 import numpy as np
 import torch.utils.data as data
-from os import mkdir
 
 import zipfile
 import pickle
@@ -48,8 +47,6 @@ def loadDataset(datasetName):
         X_train, y_train = load_wiggle_1d()
     elif (datasetName == "matern"):
         X_train, y_train = load_matern_1d("./dataset")
-    elif (datasetName == "andrew"):
-        X_train, y_train = load_andrew_1d("./dataset")
     elif (datasetName == "agw"):
         X_train, y_train = load_agw_1d("./dataset")
     elif (datasetName == "origin"):

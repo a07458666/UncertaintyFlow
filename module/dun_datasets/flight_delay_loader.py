@@ -11,7 +11,7 @@ except Exception:
 import numpy as np
 import pandas as pd
 
-from os import mkdir
+from .utils import mkdir
 
 
 
