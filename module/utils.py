@@ -386,6 +386,7 @@ def position_encode(X, m=3, axis=1):
     return np.concatenate(x_p_list, axis=axis)
 
 def addUniform(input_y, condition_X, uniform_count, X_mean, y_mean, X_var, y_var, config):
+    batch_size = input_y.size(0)
     var_scale = config["var_scale"]
     X_uniform = np.random.uniform(X_mean - (var_scale * X_var), X_mean + (var_scale * X_var), uniform_count).reshape(-1, 1, 1)
     y_uniform = np.random.uniform(y_mean - (var_scale * y_var), y_mean + (var_scale * y_var), uniform_count).reshape(-1, 1, 1)
@@ -394,8 +395,9 @@ def addUniform(input_y, condition_X, uniform_count, X_mean, y_mean, X_var, y_var
     X_uniform = torch.Tensor(X_uniform).to(condition_X)
     y_uniform = torch.Tensor(y_uniform).to(input_y)
 
-    condition_X = torch.cat((X_uniform, condition_X), 0)
-    input_y = torch.cat((y_uniform, input_y), 0)
+    idxs=torch.randperm(batch_size)
+    condition_X = torch.cat((X_uniform, condition_X), 0)[idxs, :]
+    input_y = torch.cat((y_uniform, input_y), 0)[idxs, :]
     return input_y, condition_X
 
 def sortData(x, y):

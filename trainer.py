@@ -5,6 +5,8 @@ from tqdm import tqdm
 from torch import optim
 from torch.utils import data
 from scipy.stats import norm
+from torch.optim.lr_scheduler import CosineAnnealingLR
+import math
 
 from module.flow import cnf
 from module.utils import standard_normal_logprob, position_encode, addUniform, sortData
@@ -30,6 +32,7 @@ class UncertaintyTrainer:
         self.loadDataset()
         self.creatModel()
         self.defOptimizer()
+        self.model_scheduler = CosineAnnealingLR(self.optimizer, T_max=self.config["epochs"])
         return
 
     def loadDataset(self) -> None:
@@ -43,7 +46,6 @@ class UncertaintyTrainer:
             self.X_var = X_train.var()
             self.y_var = y_train.var()
             self.uniform_count = int(self.config["batch"] * self.config["uniform_rate"])
-            self.batch_size -= self.uniform_count
             print("X mean :", self.X_mean, "y mean :", self.y_mean,"X var :", self.X_var,"y var :", self.y_var)
 
         if self.config["position_encode"]:
@@ -77,6 +79,8 @@ class UncertaintyTrainer:
                     input_y = x[1].unsqueeze(1)
                     condition_X = x[0].unsqueeze(1)
                     if (self.config["add_uniform"]):
+                        if (self.config["uniform_scheduler"]):
+                            self.uniform_count = int(self.config["batch"] * self.config["uniform_rate"] * math.cos((math.pi / 2) * (epoch / self.config["epochs"])))
                         input_y, condition_X = addUniform(input_y, condition_X, self.uniform_count, self.X_mean, self.y_mean, self.X_var, self.y_var, self.config)
 
                     delta_p = torch.zeros(input_y.size()[0], self.config["inputDim"], 1).to(input_y)
@@ -103,6 +107,10 @@ class UncertaintyTrainer:
                         logMsg["loss"] = loss
                         wandb.log(logMsg)
                         wandb.watch(self.prior,log = "all", log_graph=True)
+                
+                # epoch
+                if (self.config["lr_scheduler"] == "cos"):
+                    self.model_scheduler.step()
                 self.save(f'result/{self.config["output_folder"]}/flow_{str(epoch).zfill(2)}.pt')
         return loss_list
 
