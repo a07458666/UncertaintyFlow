@@ -1,14 +1,14 @@
 # config.yaml
 time_seed: 0
-output_folder: "train_MNIST_batch_sample"
+output_folder: "train_my_1d_batch_sample"
 
-image_task: True
-workers: 8
+image_task: False
+workers: 1
 
 # 1d: my_1d, wiggle, matern, andrew, agw, 
 # 2d: origin, axis
 # image: 'MNIST'    (image_task set True
-dataset: "MNIST"
+dataset: "my_1d"
 remark: ""
 condition_scale: 1
 position_encode: False
@@ -21,9 +21,9 @@ var_scale: 3
 batch: 100
 epochs: 100
 flow_modules: '32-32-32-32-32'
-cond_size: 512
+cond_size: 1 # for image feature dim
 lr: 1.0e-3
-inputDim: 10 # for image N_classes
+inputDim: 1 # for image N_classes
 add_uniform: False
 uniform_scheduler: False
 uniform_rate: 0.1

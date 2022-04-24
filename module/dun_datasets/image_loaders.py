@@ -7,7 +7,7 @@ from torchvision import transforms, datasets
 from torchvision.datasets import VisionDataset
 
 
-def get_image_loader(dname, batch_size, cuda, workers, distributed, data_dir='./dun_datasets/data/', subset=None):
+def get_image_loader(dname, batch_size, cuda, workers, distributed, data_dir='./dataset/', subset=None):
 
     assert dname in ['MNIST', 'Fashion', 'SVHN', 'CIFAR10', 'CIFAR100', 'SmallImagenet', 'Imagenet']
 
@@ -196,12 +196,12 @@ def get_image_loader(dname, batch_size, cuda, workers, distributed, data_dir='./
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=batch_size, shuffle=(train_sampler is None),
-        num_workers=workers, pin_memory=cuda, sampler=train_sampler)
+        num_workers=workers, pin_memory=cuda, sampler=train_sampler, drop_last=True)
 
     val_loader = torch.utils.data.DataLoader(
         val_dataset,
         batch_size=batch_size, shuffle=False,
-        num_workers=workers, pin_memory=cuda)
+        num_workers=workers, pin_memory=cuda, drop_last=True)
 
     Ntrain = len(train_dataset)
     Ntest = len(val_dataset)
