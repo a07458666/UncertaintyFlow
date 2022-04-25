@@ -95,19 +95,19 @@ class UncertaintyTrainer:
         else:
             self.prior = cnf(self.config["inputDim"], self.config["flow_modules"], self.cond_size, 1)
         if self.config["image_task"]:
-            self.feature_extraction = MyResNet()
+            self.encoder = MyResNet()
         return
 
     def defOptimizer(self) -> None:
         self.optimizer = optim.Adam(self.prior.parameters(), lr=self.config["lr"])
         if self.config["image_task"]:
-            self.feature_extraction_optimizer = optim.Adam(self.feature_extraction.parameters(), lr=self.config["lr"])
+            self.encoder_optimizer = optim.Adam(self.encoder.parameters(), lr=self.config["lr"])
         return
 
     def fit(self) -> list:
         self.prior.train()
         if self.config["image_task"]:
-            self.feature_extraction.train()
+            self.encoder.train()
         loss_list = []
 
         with tqdm(range(self.config["epochs"])) as pbar:
@@ -118,7 +118,7 @@ class UncertaintyTrainer:
                         input_y_one_hot = input_y_one_hot.type(torch.cuda.FloatTensor)
                         input_y = input_y_one_hot.unsqueeze(1).to(self.device)
                         
-                        condition_X_feature = self.feature_extraction(x[0])
+                        condition_X_feature = self.encoder(x[0])
                         condition_X = condition_X_feature.unsqueeze(2).to(self.device)
                     else:
                         input_y = x[1].unsqueeze(1)
@@ -144,11 +144,11 @@ class UncertaintyTrainer:
 
                     self.optimizer.zero_grad()
                     if self.config["image_task"]:
-                        self.feature_extraction_optimizer.zero_grad()
+                        self.encoder_optimizer.zero_grad()
                     loss.backward()
                     self.optimizer.step()
                     if self.config["image_task"]:
-                        self.feature_extraction_optimizer.step()
+                        self.encoder_optimizer.step()
 
                     pbar.set_description(
                         f'logP: {loss:.5f}')
@@ -165,21 +165,27 @@ class UncertaintyTrainer:
                 if (self.config["lr_scheduler"] == "cos"):
                     self.model_scheduler.step()
                 self.save(f'result/{self.config["output_folder"]}/flow_{str(epoch).zfill(2)}.pt')
+                if self.config["image_task"]:
+                    self.save_encoder(f'result/{self.config["output_folder"]}/encoder_{str(epoch).zfill(2)}.pt')
         return loss_list
 
 
     def save(self, path) -> None:
-        torch.save(
-            self.prior.state_dict(),
-            path
-        )
+        torch.save(self.prior.state_dict(), path)
 
     def load(self, path) -> None:
         self.prior.load_state_dict(torch.load(path))
         # self.prior.load_state_dict(torch.load(path, map_location=self.gpu))
 
+    def save_encoder(self, path) -> None:
+        torch.save(self.encoder.state_dict(), path)
 
-    def loadEvalDataset(self):
+    def load_encoder(self, path) -> None:
+        self.encoder.load_state_dict(torch.load(path))
+        # self.prior.load_state_dict(torch.load(path, map_location=self.gpu))
+
+
+    def loadValDataset(self):
         show_range = 5 * self.config["condition_scale"]
         torch.manual_seed(0)
         var_scale = self.config["var_scale"]
@@ -197,6 +203,13 @@ class UncertaintyTrainer:
         self.gt_y = gt_y
         self.evalset = MyDataset(torch.Tensor(X_eval).to(self.device), torch.Tensor(y_eval).to(self.device), transform=None)
 
+    def loadValImageDataset(self) -> None:
+        from module.dun_datasets.image_loaders import get_image_loader
+        _, _, val_loader, _, N_classes, _ = get_image_loader(self.config["dataset"], batch_size=self.batch_size, cuda=True, workers=self.config["workers"], distributed=False)
+
+        self.val_loader = val_loader
+        self.N_classes = N_classes
+        return
 
     def sample(self) -> None:
         self.prior.eval()
@@ -223,3 +236,29 @@ class UncertaintyTrainer:
         visualize_uncertainty(savePath, self.gt_X.reshape(-1), self.gt_y.reshape(-1), x_list, mean_list, var_list)
         return 
     
+
+    def sampleImage(self) -> None:
+        self.prior.eval()
+        self.encoder.eval()
+
+        # mean_list = []
+        # var_list = []
+        # x_list = []
+
+        # for i, x in tqdm(enumerate(self.evalset)):
+        #     input_x = torch.normal(mean = 0.0, std = 1.0, size=(self.config["sample_count"] ,1)).unsqueeze(1).to(self.device)
+        #     condition_y = x[0].expand(self.config["sample_count"], -1).unsqueeze(1) 
+        #     delta_p = torch.zeros(self.config["sample_count"], self.config["inputDim"], 1).to(x[0])
+
+        #     approx21, delta_log_p2 = self.prior(input_x, condition_y, delta_p, reverse=True)
+
+        #     np_x = float(x[0].detach().cpu().numpy()[0])
+        #     np_var = float(torch.var(approx21).detach().cpu().numpy())
+        #     np_mean = float(torch.mean(approx21).detach().cpu().numpy())
+        #     x_list.append(np_x)
+        #     var_list.append(np_var)
+        #     mean_list.append(np_mean)
+        
+        # savePath = f'result/{self.config["output_folder"]}/var.png'
+        # visualize_uncertainty(savePath, self.gt_X.reshape(-1), self.gt_y.reshape(-1), x_list, mean_list, var_list)
+        return 

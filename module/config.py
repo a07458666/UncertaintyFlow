@@ -2,7 +2,6 @@
 import os
 import yaml
 import datetime
-import pytz
 
 def checkOutputDirectoryAndCreate(output_folder):
     if not os.path.exists('result/' + output_folder):

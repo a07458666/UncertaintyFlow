@@ -1,5 +1,6 @@
 import torch.nn as nn
 from torchvision import models
+import torch
 
 class MyResNet(nn.Module):
 

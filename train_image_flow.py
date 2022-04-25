@@ -20,6 +20,7 @@ def main(config, device):
     trainer = UncertaintyTrainer(config, device)
     trainer.fit()
     trainer.save(f'result/{config["output_folder"]}/flow_last.pt')
+    trainer.save_encoder(f'result/{config["output_folder"]}/encoder_last.pt')
 
 if __name__ == '__main__':
     # args

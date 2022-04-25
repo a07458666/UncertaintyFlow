@@ -12,16 +12,18 @@ except ImportError:
     wandb = None
     logger.info("Install Weights & Biases for experiment logging via 'pip install wandb' (recommended)")
 
-def main(config, device, model_path):
+def main(config, device, model_path, encoder_path):
     trainer = UncertaintyTrainer(config, device)
     trainer.load(model_path)
-    trainer.loadValDataset()
-    trainer.sample()
+    trainer.load_encoder(encoder_path)
+    trainer.loadValImageDataset()
+    trainer.sampleImage()
 
 if __name__ == '__main__':
     # args
     parser = argparse.ArgumentParser(description="Uncertainty trainer")
     parser.add_argument("--modelPath", type=str)
+    parser.add_argument("--encoderPath", type=str)
     parser.add_argument("--gpu", type=str, default="0")
     parser.add_argument("--config", type=str, default="")
     args = parser.parse_args()
@@ -36,5 +38,5 @@ if __name__ == '__main__':
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     device = torch.device("cuda" if torch.cuda.is_available() and args.gpu != "-1" else "cpu")
     # main
-    main(config, device, args.modelPath)
+    main(config, device, args.modelPath, args.encoderPath)
     
