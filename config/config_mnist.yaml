@@ -3,7 +3,7 @@ time_seed: 0
 output_folder: "train_MNIST_batch_sample"
 
 image_task: True
-workers: 8
+workers: 32
 
 # 1d: my_1d, wiggle, matern, andrew, agw, 
 # 2d: origin, axis
@@ -18,11 +18,11 @@ linear_encode: False
 linear_encode_m : 50
 var_scale: 3
 # train
-batch: 100
-epochs: 100
+batch: 256
+epochs: 40
 flow_modules: '32-32-32-32-32'
 cond_size: 512
-lr: 1.0e-3
+lr: 1.0e-2
 inputDim: 10 # for image N_classes
 add_uniform: False
 uniform_scheduler: False
