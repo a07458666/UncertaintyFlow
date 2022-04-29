@@ -1,6 +1,6 @@
 # config.yaml
 time_seed: 0
-output_folder: "train_MNIST_batch_sample"
+output_folder: "train_CIFAR10_batch_sample"
 
 image_task: True
 workers: 32
@@ -8,7 +8,7 @@ workers: 32
 # 1d: my_1d, wiggle, matern, andrew, agw, 
 # 2d: origin, axis
 # image: 'MNIST'    (image_task set True
-dataset: "MNIST"
+dataset: "CIFAR10"
 remark: ""
 condition_scale: 1
 position_encode: False

@@ -7,13 +7,19 @@ from torch.utils import data
 from scipy.stats import norm
 from torch.optim.lr_scheduler import CosineAnnealingLR
 import math
+import torch.nn.functional as F
+import pandas as pd
+
 
 from module.flow import cnf
-from module.utils import standard_normal_logprob, position_encode, addUniform, sortData
+from module.utils import standard_normal_logprob, position_encode, addUniform, sortData, accuracy
 from module.dun_datasets.loader import loadDataset, MyDataset
 from module.visualize import visualize_uncertainty
 from module.resnet import MyResNet
 from condition_sampler.flow_sampler import FlowSampler
+from module.image.OOD_utils import rotate_load_dataset, load_corrupted_dataset, cross_load_dataset
+from module.dun_datasets.image_loaders import get_image_loader
+from module.image.test_methods import class_brier, class_err, class_ll, class_ECE
 
 try:
     import wandb
@@ -38,6 +44,22 @@ class UncertaintyTrainer:
         self.defOptimizer()
         self.model_scheduler = CosineAnnealingLR(self.optimizer, T_max=self.config["epochs"])
         return
+
+    def setDataFrame(self, path):
+        dtypes = np.dtype([
+            ("method", str), ("dataset", str), ("model", str), 
+            # ("stop", int), ("number", int), ("n_samples", int), ("warmup", int),
+            ("ll", float), ("err", float), ("ece", float), ("brier", float), ("rotation", int), ("corruption", int),
+            ("auc_roc", float), ("err_props", list), ("target_dataset", str),
+            # ("batch_time", float), ("batch_size", int),
+            # ("best_or_last", str), ("use_no_train_post", bool)
+        ])
+        data = np.empty(0, dtype=dtypes)
+        self.df = pd.DataFrame(data)  
+        self.df_path = path
+        method = "flow"
+        model = "res18"
+        self.row_to_add_proto = {"dataset": self.config["dataset"], "method": method, "model": model}
 
     def loadDataset(self) -> None:
         X_train, y_train = loadDataset(self.config["dataset"])
@@ -124,15 +146,15 @@ class UncertaintyTrainer:
                         input_y = x[1].unsqueeze(1)
                         condition_X = x[0].unsqueeze(1)
 
-                    # print("input_y : ", input_y.size())
-                    # print("condition_X : ", condition_X.size())
+                    print("input_y : ", input_y.size())
+                    print("condition_X : ", condition_X.size())
                     if (self.config["add_uniform"]):
                         if (self.config["uniform_scheduler"]):
                             self.uniform_count = int(self.config["batch"] * self.config["uniform_rate"] * math.cos((math.pi / 2) * (epoch / self.config["epochs"])))
                         input_y, condition_X = addUniform(input_y, condition_X, self.uniform_count, self.X_mean, self.y_mean, self.X_var, self.y_var, self.config)
 
                     delta_p = torch.zeros(input_y.shape[0], input_y.shape[1], 1).to(input_y)
-                    # print("delta_p: ", delta_p.size())
+                    print("delta_p: ", delta_p.size())
                     approx21, delta_log_p2 = self.prior(input_y, condition_X, delta_p)
 
                     approx2 = standard_normal_logprob(approx21).view(input_y.size()[0], -1).sum(1, keepdim=True)
@@ -201,11 +223,10 @@ class UncertaintyTrainer:
             gt_X = gt_X * self.config["condition_scale"]
         self.gt_X = gt_X
         self.gt_y = gt_y
-        self.evalset = MyDataset(torch.Tensor(X_eval).to(self.device), torch.Tensor(y_eval).to(self.device), transform=None)
+        self.val_loader = MyDataset(torch.Tensor(X_eval).to(self.device), torch.Tensor(y_eval).to(self.device), transform=None)
 
     def loadValImageDataset(self) -> None:
-        from module.dun_datasets.image_loaders import get_image_loader
-        _, _, val_loader, _, N_classes, _ = get_image_loader(self.config["dataset"], batch_size=self.batch_size, cuda=True, workers=self.config["workers"], distributed=False)
+        _, _, val_loader, _, N_classes, _ = get_image_loader(self.config["dataset"], batch_size=self.config["sample_count"], cuda=True, workers=self.config["workers"], distributed=False)
 
         self.val_loader = val_loader
         self.N_classes = N_classes
@@ -218,11 +239,11 @@ class UncertaintyTrainer:
         var_list = []
         x_list = []
 
-        for i, x in tqdm(enumerate(self.evalset)):
+        for i, x in tqdm(enumerate(self.val_loader)):
             input_x = torch.normal(mean = 0.0, std = 1.0, size=(self.config["sample_count"] ,1)).unsqueeze(1).to(self.device)
             condition_y = x[0].expand(self.config["sample_count"], -1).unsqueeze(1) 
             delta_p = torch.zeros(self.config["sample_count"], self.config["inputDim"], 1).to(x[0])
-
+                        
             approx21, delta_log_p2 = self.prior(input_x, condition_y, delta_p, reverse=True)
 
             np_x = float(x[0].detach().cpu().numpy()[0])
@@ -237,28 +258,178 @@ class UncertaintyTrainer:
         return 
     
 
-    def sampleImage(self) -> None:
+    def sampleImageAcc(self) -> float:
         self.prior.eval()
         self.encoder.eval()
+        acc = 0
+        smax = torch.nn.Softmax(dim=1)
 
-        # mean_list = []
-        # var_list = []
-        # x_list = []
+        for i_batch, x in tqdm(enumerate(self.val_loader)):
+            # y_one_hot = torch.nn.functional.one_hot(x[1], self.N_classes).to(self.device)
+            y = x[1].to(self.device)            
+            condition_feature = self.encoder(x[0])
+            condition = condition_feature.unsqueeze(2).to(self.device)
 
-        # for i, x in tqdm(enumerate(self.evalset)):
-        #     input_x = torch.normal(mean = 0.0, std = 1.0, size=(self.config["sample_count"] ,1)).unsqueeze(1).to(self.device)
-        #     condition_y = x[0].expand(self.config["sample_count"], -1).unsqueeze(1) 
-        #     delta_p = torch.zeros(self.config["sample_count"], self.config["inputDim"], 1).to(x[0])
+            input_z = torch.normal(mean = 0.0, std = 1.0, size=(self.config["sample_count"] , self.N_classes)).unsqueeze(1).to(self.device)
+            delta_p = torch.zeros(input_z.shape[0], input_z.shape[1], 1).to(input_z)
 
-        #     approx21, delta_log_p2 = self.prior(input_x, condition_y, delta_p, reverse=True)
+            approx21, delta_log_p2 = self.prior(input_z, condition, delta_p, reverse=True)
 
-        #     np_x = float(x[0].detach().cpu().numpy()[0])
-        #     np_var = float(torch.var(approx21).detach().cpu().numpy())
-        #     np_mean = float(torch.mean(approx21).detach().cpu().numpy())
-        #     x_list.append(np_x)
-        #     var_list.append(np_var)
-        #     mean_list.append(np_mean)
+            y_pre = smax(approx21.squeeze(1))
+            loss_batch_acc_top = accuracy(y_pre, y, topk=(1,))
+            acc += loss_batch_acc_top[0].cpu()
+        acc /= i_batch + 1
+        print("acc : ", acc)
+        return acc
+
+    def get_preds_targets(self, val_loader):
+        self.prior.eval()
+        self.encoder.eval()
+        logprob_vec = []
+        target_vec = []
+        entropy_vec = []
+        smax = torch.nn.Softmax(dim=1)
+
+        for i_batch, x in tqdm(enumerate(val_loader)):
+            # y_one_hot = torch.nn.functional.one_hot(x[1], self.N_classes).to(self.device)
+            y = x[1].to(self.device)            
+            condition_feature = self.encoder(x[0])
+            condition = condition_feature.unsqueeze(2).to(self.device)
+
+            input_z = torch.normal(mean = 0.0, std = 1.0, size=(self.config["sample_count"] , self.N_classes)).unsqueeze(1).to(self.device)
+            delta_p = torch.zeros(input_z.shape[0], input_z.shape[1], 1).to(input_z)
+
+            # print("input_z :", input_z.size())
+            # print("condition :", condition.size())
+            # print("delta_p :", delta_p.size())
+            approx21, delta_log_p2 = self.prior(input_z, condition, delta_p, reverse=True)
+
+            # y_pre = smax(approx21.squeeze(1))
+            log_probs = F.log_softmax(approx21.detach().squeeze(1), dim=1)
+            entropy_vec.append(self.entropy_from_logprobs(log_probs))
+            logprob_vec.append(log_probs)
+            target_vec.append(y)
+    
+        logprob_vec = torch.cat(logprob_vec, dim=0)
+        target_vec = torch.cat(target_vec, dim=0)
+        entropy_vec = torch.cat(entropy_vec, dim=0)
+
+        return logprob_vec.data.cpu(), target_vec.data.cpu(), entropy_vec.data.cpu() 
+
+    def entropy_from_logprobs(self, log_probs):
+        return - (log_probs.exp() * log_probs).sum(dim=1)
+
+    def flow_test_stats(self, dset, data_dir, corruption=None, rotation=None, batch_size=256, cuda=True, workers=4, iterate=False, no_ece=False):
+        assert not (corruption is not None and rotation is not None)
+        if corruption is None and rotation is None:
+            _, _, val_loader, _, _, _ = \
+                get_image_loader(dset, batch_size, cuda=cuda, workers=workers, distributed=False, data_dir=data_dir)
+        elif corruption is not None:
+            val_loader = load_corrupted_dataset(dset, severity=corruption, data_dir=data_dir, batch_size=batch_size,
+                                                cuda=cuda, workers=workers)
+        elif rotation is not None:
+            val_loader = rotate_load_dataset(dset, rotation, data_dir=data_dir,
+                                            batch_size=batch_size, cuda=cuda, workers=workers)
+
+        # logprob_vec, target_vec = get_preds_targets(model, val_loader, cuda, MC_samples, return_vector=iterate)
+        logprob_vec, target_vec, _ = self.get_preds_targets(val_loader)
+        # print("logprob_vec", logprob_vec)
+        # print("target_vec", target_vec)
+        if iterate:
+            brier_vec = []
+            err_vec = []
+            ll_vec = []
+            ece_vec = []
+
+            for n_samples in range(1, logprob_vec.shape[1]+1):
+                comb_logprobs = torch.logsumexp(logprob_vec[:, :n_samples, :], dim=1, keepdim=False) - np.log(n_samples)
+                # brier_vec.append(class_brier(y=target_vec, log_probs=comb_logprobs, probs=None))
+                err_vec.append(class_err(y=target_vec, model_out=comb_logprobs))
+                ll_vec.append(class_ll(y=target_vec, log_probs=comb_logprobs, probs=None, eps=1e-40))
+                #ece_vec.append(float('nan') if no_ece else class_ECE(y=target_vec, log_probs=comb_logprobs,
+                #                                                    probs=None, nbins=10))
+            return err_vec, ll_vec, brier_vec, ece_vec
+
+        # brier = class_brier(y=target_vec, log_probs=logprob_vec, probs=None)
+        err = class_err(y=target_vec, model_out=logprob_vec)
+        ll = class_ll(y=target_vec, log_probs=logprob_vec, probs=None, eps=1e-40)
+        # ece = class_ECE(y=target_vec, log_probs=logprob_vec, probs=None, nbins=10)
+        return  err, ll#, brier, ece
+
+    def rot_measurements(self):
+        err_list = []
+        ll_list = []
+        # all measurements of err, ll, ece, brier
+        for rotation, corruption in [(0, 0)] + [] +[(rot, 0) for rot in range(15, 181, 15)]:
+            row_to_add = self.row_to_add_proto.copy()
+            row_to_add.update({"rotation": rotation, "corruption": corruption})
+            rotation = None if rotation == 0 else rotation
+            corruption = None if corruption == 0 else corruption
+            # err, ll, brier = self.flow_test_stats(self.config["dataset"], data_dir="./dataset", corruption=corruption, rotation=rotation, batch_size=self.config["sample_count"], cuda=True, workers=self.config["workers"])
+            err, ll = self.flow_test_stats(self.config["dataset"], data_dir="./dataset", corruption=corruption, rotation=rotation, batch_size=self.config["sample_count"], cuda=True, workers=self.config["workers"])
+
+            # row_to_add.update({"err": err, "ll": ll.item(), "brier": brier.item(), "ece": ece})
+            row_to_add.update({"err": err, "ll": ll.item()})
+            self.df = self.df.append(row_to_add, ignore_index=True)
+            self.df.to_csv(self.df_path)  
+            print("rot : ", rotation)
+            print("corruption : ", corruption)
+            print("err : ", err)
+            print("ll : ", ll)
+            err_list.append(err)
+            ll_list.append(ll.item())
+            
+            # print("brier : ", brier)
+            #print("ece : ", ece)
         
-        # savePath = f'result/{self.config["output_folder"]}/var.png'
-        # visualize_uncertainty(savePath, self.gt_X.reshape(-1), self.gt_y.reshape(-1), x_list, mean_list, var_list)
-        return 
+        return err_list, ll_list#, brier, ece
+
+    def flow_class_rej(self, source_dset, target_dset, data_dir, batch_size=256, cuda=True,
+                       rejection_step=0.005, workers=4):
+
+        source_loader, target_loader = cross_load_dataset(source_dset, target_dset, data_dir=data_dir,
+                                                        batch_size=batch_size, cuda=cuda, workers=workers)
+
+        _, _, source_entropy = self.get_preds_targets(source_loader)
+        _, _, target_entropy = self.get_preds_targets(target_loader)
+
+        logprob_vec, target_vec, _ = self.get_preds_targets(source_loader)
+        pred = logprob_vec.max(dim=1, keepdim=False)[1]  # get the index of the max probability
+        err_vec_in = pred.ne(target_vec.data).cpu().numpy()
+        err_vec_out = np.ones(target_entropy.shape[0])
+
+        full_err_vec = np.concatenate([err_vec_in, err_vec_out], axis=0)
+        full_entropy_vec = np.concatenate([source_entropy, target_entropy], axis=0)
+        sort_entropy_idxs = np.argsort(full_entropy_vec, axis=0)
+        Npoints = sort_entropy_idxs.shape[0]
+
+        err_props = []
+
+        for rej_prop in np.arange(0, 1, rejection_step):
+            N_reject = np.round(Npoints * rej_prop).astype(int)
+            if N_reject > 0:
+                accepted_idx = sort_entropy_idxs[:-N_reject]
+            else:
+                accepted_idx = sort_entropy_idxs
+
+            err_props.append(full_err_vec[accepted_idx].sum() / accepted_idx.shape[0])
+
+            assert err_props[-1].max() <= 1 and err_props[-1].min() >= 0
+
+        return np.array(err_props)
+    # rejection measurements
+    def rejection_measurements(self, target_datasets):
+        err_props_list = []
+        for target_dataset in target_datasets[self.config["dataset"]]:
+            row_to_add = self.row_to_add_proto.copy()
+            row_to_add.update({"target_dataset": target_dataset})
+            # if len(df.loc[(df[list(row_to_add)] == pd.Series(row_to_add)).all(axis=1)]) > 0:
+            #     continue
+            err_props = self.flow_class_rej(self.config["dataset"], target_dataset, data_dir="./dataset",
+                                                batch_size=self.config["sample_count"],
+                                                cuda=True, workers=self.config["workers"])
+            row_to_add.update({"err_props": err_props})
+            self.df = self.df.append(row_to_add, ignore_index=True)
+            self.df.to_csv(self.df_path)  
+            err_props_list.append(err_props)
+        return err_props_list

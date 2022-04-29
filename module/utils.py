@@ -206,7 +206,6 @@ def validate_classification(loaders, model, args):
     print("Acc:%s" % acc)
     return res
 
-
 def validate_conditioned(loader, model, args, max_samples=None, save_dir=None):
     from metrics.evaluation_metrics import EMD_CD
     all_idx = []
@@ -403,3 +402,20 @@ def addUniform(input_y, condition_X, uniform_count, X_mean, y_mean, X_var, y_var
 def sortData(x, y):
     x_sorted, y_sorted = zip(*sorted(zip(x, y)))
     return np.asarray(x_sorted), np.asarray(y_sorted)
+
+def accuracy(output, target, topk=(1,)):
+    """Computes the accuracy over the k top
+    predictions for the specified values of k
+    """
+    with torch.no_grad():
+        maxk = max(topk)
+        batch_size = target.size(0)
+
+        _, pred = output.topk(maxk, 1, True, True)
+        pred = pred.t()
+        correct = pred.eq(target.view(1, -1).expand_as(pred))
+        res = []
+        for k in topk:
+            correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True)
+            res.append(correct_k.mul_(100.0 / batch_size))
+        return res  

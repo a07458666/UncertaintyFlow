@@ -1,6 +1,8 @@
 import os
 import numpy as np
 import argparse
+
+import pandas
 import torch
 
 from trainer import UncertaintyTrainer
@@ -14,10 +16,23 @@ except ImportError:
 
 def main(config, device, model_path, encoder_path):
     trainer = UncertaintyTrainer(config, device)
+    trainer.setDataFrame('./flow_image.csv')
     trainer.load(model_path)
     trainer.load_encoder(encoder_path)
     trainer.loadValImageDataset()
-    trainer.sampleImage()
+    # trainer.sampleImageAcc()
+    
+    target_datasets = {
+    "MNIST": ["Fashion"],
+    # "Fashion": ["MNIST", "KMNIST"],
+    # "CIFAR10": ["SVHN"],
+    # "CIFAR100": ["SVHN"],
+    # "SVHN": ["CIFAR10"]
+    }
+    for i in range(10):
+        err_list, ll_list = trainer.rot_measurements()
+        err_props = trainer.rejection_measurements(target_datasets)
+    
 
 if __name__ == '__main__':
     # args
