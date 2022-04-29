@@ -86,7 +86,7 @@ class UncertaintyTrainer:
 
     def loadImageDataset(self) -> None:
         from module.dun_datasets.image_loaders import get_image_loader
-        _, train_loader, _, _, N_classes, _ = get_image_loader(self.config["dataset"], batch_size=self.batch_size, cuda=True, workers=self.config["workers"], distributed=False)
+        _, train_loader, _, input_channels, N_classes, _ = get_image_loader(self.config["dataset"], batch_size=self.batch_size, cuda=True, workers=self.config["workers"], distributed=False)
 
         # X_train, y_train = loadDataset(self.config["dataset"])
         # if self.config["condition_scale"] != 1:
@@ -109,6 +109,7 @@ class UncertaintyTrainer:
         # trainset = MyDataset(torch.Tensor(X_train).to(self.device), torch.Tensor(y_train).to(self.device), transform=None)
         self.train_loader = train_loader
         self.N_classes = N_classes
+        self.input_channels = input_channels
         return
 
     def creatModel(self) -> None:
@@ -117,7 +118,7 @@ class UncertaintyTrainer:
         else:
             self.prior = cnf(self.config["inputDim"], self.config["flow_modules"], self.cond_size, 1)
         if self.config["image_task"]:
-            self.encoder = MyResNet()
+            self.encoder = MyResNet(in_channels = self.input_channels)
         return
 
     def defOptimizer(self) -> None:
@@ -136,6 +137,9 @@ class UncertaintyTrainer:
             for epoch in pbar:
                 for i, x in enumerate(self.train_loader):
                     if (self.config["image_task"]):
+                        # print("x[0] : ", x[0].size())
+                        # print("x[1] : ", x[1].size())
+                        # print("self.N_classes : ", self.N_classes)
                         input_y_one_hot = torch.nn.functional.one_hot(x[1], self.N_classes)
                         input_y_one_hot = input_y_one_hot.type(torch.cuda.FloatTensor)
                         input_y = input_y_one_hot.unsqueeze(1).to(self.device)
@@ -146,15 +150,15 @@ class UncertaintyTrainer:
                         input_y = x[1].unsqueeze(1)
                         condition_X = x[0].unsqueeze(1)
 
-                    print("input_y : ", input_y.size())
-                    print("condition_X : ", condition_X.size())
+                    # print("input_y : ", input_y.size())
+                    # print("condition_X : ", condition_X.size())
                     if (self.config["add_uniform"]):
                         if (self.config["uniform_scheduler"]):
                             self.uniform_count = int(self.config["batch"] * self.config["uniform_rate"] * math.cos((math.pi / 2) * (epoch / self.config["epochs"])))
                         input_y, condition_X = addUniform(input_y, condition_X, self.uniform_count, self.X_mean, self.y_mean, self.X_var, self.y_var, self.config)
 
                     delta_p = torch.zeros(input_y.shape[0], input_y.shape[1], 1).to(input_y)
-                    print("delta_p: ", delta_p.size())
+                    # print("delta_p: ", delta_p.size())
                     approx21, delta_log_p2 = self.prior(input_y, condition_X, delta_p)
 
                     approx2 = standard_normal_logprob(approx21).view(input_y.size()[0], -1).sum(1, keepdim=True)
