@@ -14,7 +14,8 @@ __pycache__/
 /*png
 # C extensions
 *.so
-
+*.csv
+*.pdf
 # Distribution / packaging
 .Python
 build/
