@@ -16,7 +16,8 @@ except ImportError:
 
 def main(config, device, model_path, encoder_path):
     trainer = UncertaintyTrainer(config, device)
-    trainer.setDataFrame('./flow_image.csv')
+    csv_path = "./" + config["output_folder"] + ".csv"
+    trainer.setDataFrame(csv_path)
     trainer.load(model_path)
     trainer.load_encoder(encoder_path)
     trainer.loadValImageDataset()

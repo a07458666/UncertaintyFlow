@@ -118,7 +118,7 @@ class UncertaintyTrainer:
         else:
             self.prior = cnf(self.config["inputDim"], self.config["flow_modules"], self.cond_size, 1)
         if self.config["image_task"]:
-            self.encoder = MyResNet(in_channels = self.input_channels)
+            self.encoder = MyResNet(in_channels = self.input_channels, out_features = self.cond_size)
         return
 
     def defOptimizer(self) -> None:
