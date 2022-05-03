@@ -134,6 +134,6 @@ class FlowSampler:
         z, delta_log_p = self.prior(x, torch.zeros(x.size()[0], 1, 1).to(x), torch.zeros(x.size()).to(x))
         
         log_p_z = self.pmodel.logprob(z).view(x.shape[0], -1).sum(1, keepdim=True)
-        delta_log_p = delta_log_p.view(x.shape[0], 1, 1).sum(1)
+        delta_log_p = delta_log_p.view(x.shape[0], 1, -1).sum(1)
         log_p_x = (log_p_z - delta_log_p)
         return log_p_x
