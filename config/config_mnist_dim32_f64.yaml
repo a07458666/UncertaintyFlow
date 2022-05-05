@@ -1,0 +1,37 @@
+# config.yaml
+time_seed: 0
+output_folder: "train_MNIST_batch_sample"
+
+image_task: True
+workers: 32
+
+# 1d: my_1d, wiggle, matern, andrew, agw, 
+# 2d: origin, axis
+# image: 'MNIST'    (image_task set True
+dataset: "MNIST"
+remark: ""
+condition_scale: 1
+position_encode: False
+position_encode_m: 50
+# linear_encode
+linear_encode: False
+linear_encode_m : 50
+var_scale: 3
+# train
+batch: 256
+epochs: 40
+flow_modules: '32-32-32-32-32'
+cond_size: 64
+lr: 1.0e-2
+inputDim: 10 # for image N_classes
+add_uniform: False
+uniform_scheduler: False
+uniform_rate: 0.1
+# eval
+sample_count: 256
+eval_data:
+  count: 300
+
+# cos, ""
+lr_scheduler: "cos"
+
