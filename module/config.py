@@ -11,7 +11,7 @@ def loadConfig(path):
     f = open(path)
     config = yaml.load(f, Loader=yaml.FullLoader)
     tz = datetime.timezone(datetime.timedelta(hours=+8))
-    config["start_time"] =datetime.datetime.now(tz=tz).strftime("_%m-%d_%H:%M")
+    config["start_time"] = datetime.datetime.now(tz=tz).strftime("_%m-%d_%H:%M")
     return config
 
 def showConfig(config):
