@@ -31,7 +31,7 @@ ylim = 3
 
 def errorfill(x, y, yerr, color=None, alpha_fill=0.3, line_alpha=1, ax=None, lw=1, linestyle='-', fill_linewidths=0.2):
     ax = ax if ax is not None else plt.gca()
-    yerr *= 100
+    # yerr *= 100
     if color is None:
         color = ax._get_lines.color_cycle.next()
     if np.isscalar(yerr) or len(yerr) == len(y):
