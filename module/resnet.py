@@ -1,6 +1,7 @@
 import torch.nn as nn
 from torchvision import models
 import torch
+from torch import Tensor
 
 class MyResNet(nn.Module):
 
@@ -17,3 +18,20 @@ class MyResNet(nn.Module):
 
     def forward(self, x):
         return self.model(x)
+
+    def forward_flatten(self, x: Tensor) -> Tensor:
+        x = self.model.conv1(x)
+        x = self.model.bn1(x)
+        x = self.model.relu(x)
+        x = self.model.maxpool(x)
+
+        x = self.model.layer1(x)
+        x = self.model.layer2(x)
+        x = self.model.layer3(x)
+        x = self.model.layer4(x)
+
+        x = self.model.avgpool(x)
+        x = torch.flatten(x, 1)
+        # x = self.fc(x)
+
+        return x
