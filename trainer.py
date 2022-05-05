@@ -16,10 +16,10 @@ from module.utils import standard_normal_logprob, position_encode, addUniform, s
 from module.dun_datasets.loader import loadDataset, MyDataset
 from module.visualize import visualize_uncertainty
 from module.resnet import MyResNet
-from condition_sampler.flow_sampler import FlowSampler
 from module.image.OOD_utils import rotate_load_dataset, load_corrupted_dataset, cross_load_dataset
 from module.dun_datasets.image_loaders import get_image_loader
 from module.image.test_methods import class_brier, class_err, class_ll, class_ECE
+from module.condition_sampler.flow_sampler import FlowSampler
 
 try:
     import wandb
@@ -35,7 +35,7 @@ class UncertaintyTrainer:
         torch.manual_seed(self.config["time_seed"])
         self.batch_size = self.config["batch"]
         self.cond_size = self.config["cond_size"]
-
+        self.eps = 1e-40
         if (self.config["image_task"]):
             self.loadImageDataset()
         else:
@@ -112,6 +112,19 @@ class UncertaintyTrainer:
         self.input_channels = input_channels
         return
 
+    def loadSamplerDataset(self, path) -> None:
+        dataset = np.load(self.config["sampler_dataset"])
+
+        X_train = dataset['x']
+        y_train = dataset['y']
+        self.X_mean = dataset['mean']
+        self.X_var = dataset['var']        
+        self.uniform_count = int(self.config["batch"] * self.config["uniform_rate"])
+
+        trainset = MyDataset(torch.Tensor(X_train).to(self.device), torch.Tensor(y_train).to(torch.int64).to(self.device), transform=None)
+        self.train_loader = data.DataLoader(trainset, shuffle=True, batch_size=self.batch_size, drop_last = True)
+        return
+
     def creatModel(self) -> None:
         if self.config["linear_encode"]:
             self.prior = cnf(self.config["inputDim"], self.config["flow_modules"], self.cond_size, 1, self.config["linear_encode_m"])
@@ -150,14 +163,15 @@ class UncertaintyTrainer:
                         input_y = x[1].unsqueeze(1)
                         condition_X = x[0].unsqueeze(1)
 
-                    # print("input_y : ", input_y.size())
-                    # print("condition_X : ", condition_X.size())
+
                     if (self.config["add_uniform"]):
                         if (self.config["uniform_scheduler"]):
                             self.uniform_count = int(self.config["batch"] * self.config["uniform_rate"] * math.cos((math.pi / 2) * (epoch / self.config["epochs"])))
                         input_y, condition_X = addUniform(input_y, condition_X, self.uniform_count, self.X_mean, self.y_mean, self.X_var, self.y_var, self.config)
 
                     delta_p = torch.zeros(input_y.shape[0], input_y.shape[1], 1).to(input_y)
+                    # print("input_y : ", input_y.size())
+                    # print("condition_X : ", condition_X.size())
                     # print("delta_p: ", delta_p.size())
                     approx21, delta_log_p2 = self.prior(input_y, condition_X, delta_p)
 
@@ -195,6 +209,178 @@ class UncertaintyTrainer:
                     self.save_encoder(f'result/{self.config["output_folder"]}/encoder_{str(epoch).zfill(2)}.pt')
         return loss_list
 
+    def getWeight(self, input_y, condition_X, uniform_count, X_mean, X_var):
+        true_data_weight = torch.tensor([[1.]] * condition_X.size()[0]).to(self.device)
+
+        batch_size = input_y.size(0)
+        var_scale = self.config["var_scale"]
+        X_uniform = np.random.uniform(X_mean - (var_scale * X_var), X_mean + (var_scale * X_var), uniform_count * self.cond_size).reshape(-1, self.cond_size, 1)
+        X_uniform = torch.Tensor(X_uniform).to(condition_X)
+        
+        # y_uniform = np.random.uniform(y_mean - (var_scale * y_var), y_mean + (var_scale * y_var), uniform_count * self.config["inputDim"]).reshape(-1, 1, self.config["inputDim"])
+        y_uniform_num = torch.randint(0, self.N_classes, (uniform_count,))
+        y_uniform_one_hot = torch.nn.functional.one_hot(y_uniform_num, self.N_classes)
+        y_uniform_one_hot = y_uniform_one_hot.type(torch.cuda.FloatTensor)
+        y_uniform = y_uniform_one_hot.unsqueeze(1).to(self.device)
+
+        idxs=torch.randperm(batch_size)
+        # print("X_uniform ", X_uniform.size())
+        # print("condition_X ", condition_X.size())
+        # print("y_uniform ", y_uniform.size())
+        # print("input_y ", input_y.size())
+        condition_X = torch.cat((X_uniform, condition_X), 0)[idxs, :]
+        input_y = torch.cat((y_uniform, input_y), 0)[idxs, :]
+        
+
+        # compute noise weight
+        noise_logp = self.sampler.logprob(torch.tensor(X_uniform).float().to(self.device))
+        
+        # noise_weight = torch.clamp(1 - torch.exp(noise_logp), 0, 1)  # (1-p)
+        # noise_weight = 1 / (1 + torch.exp(noise_logp))               # 1 / (1+p)
+        noise_weight = torch.pow(10, -torch.exp(noise_logp))         # 10 ** -p
+
+        weight = torch.cat([true_data_weight, noise_weight])[idxs, :]
+        return input_y, condition_X, weight
+
+    def fit_sampler(self) -> list:
+        self.prior.train()
+        self.encoder.eval()
+        loss_list = []
+
+        with tqdm(range(self.config["epochs"])) as pbar:
+            for epoch in pbar:
+                for i, x in enumerate(self.train_loader):
+
+                    if (self.config["image_task"]):
+                        input_y_one_hot = torch.nn.functional.one_hot(x[1], self.N_classes)
+                        input_y_one_hot = input_y_one_hot.type(torch.cuda.FloatTensor)
+                        input_y = input_y_one_hot.unsqueeze(1).to(self.device)
+                        
+                        condition_X = x[0].unsqueeze(2).to(self.device)
+                    else:
+                        condition_X = x[0].unsqueeze(1)
+                        input_y = x[1].unsqueeze(1)
+
+                    input_y, condition_X, weight = self.getWeight(input_y, condition_X, self.uniform_count, self.X_mean, self.X_var)
+                    delta_p = torch.zeros(input_y.shape[0], input_y.shape[1], 1).to(input_y)
+                    # print("input_y : ", input_y.size())
+                    # print("condition_X : ", condition_X.size())
+                    # print("delta_p: ", delta_p.size())
+                    approx21, delta_log_p2 = self.prior(input_y, condition_X, delta_p)
+
+                    approx2 = standard_normal_logprob(approx21).view(input_y.size()[0], -1).sum(1, keepdim=True)
+                
+                    delta_log_p2 = delta_log_p2.view(input_y.size()[0], input_y.shape[1], 1).sum(1)
+                    log_p2 = (approx2 - delta_log_p2)
+
+                    # print("log_p2 : ", log_p2.size())
+                    # print("weight : ", weight.size())
+                    loss = -(log_p2 * weight).mean()
+
+                    self.optimizer.zero_grad()
+                    loss.backward()
+                    self.optimizer.step()
+
+                    pbar.set_description(
+                        f'logP: {loss:.5f}')
+                    loss_list.append(loss.item())
+
+                    if (wandb != None):
+                        logMsg = {}
+                        logMsg["epoch"] = epoch
+                        logMsg["loss"] = loss
+                        wandb.log(logMsg)
+                        wandb.watch(self.prior,log = "all", log_graph=True)
+                
+                # epoch
+                if (self.config["lr_scheduler"] == "cos"):
+                    self.model_scheduler.step()
+                self.save(f'result/{self.config["output_folder"]}/flow_{str(epoch).zfill(2)}.pt')
+        return loss_list
+
+    # def fit_loss(self) -> list:
+    #     self.prior.train()
+    #     if self.config["image_task"]:
+    #         self.encoder.train()
+    #     loss_list = []
+    #     loss_ce_fn = torch.nn.CrossEntropyLoss()
+    #     with tqdm(range(self.config["epochs"])) as pbar:
+    #         for epoch in pbar:
+    #             for i, x in enumerate(self.train_loader):
+    #                 if (self.config["image_task"]):
+    #                     input_y_one_hot = torch.nn.functional.one_hot(x[1], self.N_classes)
+    #                     input_y_one_hot = input_y_one_hot.type(torch.cuda.FloatTensor)
+    #                     input_y = input_y_one_hot.unsqueeze(1).to(self.device)
+                        
+    #                     condition_X_feature = self.encoder(x[0])
+    #                     condition_X = condition_X_feature.unsqueeze(2).to(self.device)
+    #                 else:
+    #                     input_y = x[1].unsqueeze(1)
+    #                     condition_X = x[0].unsqueeze(1)
+
+    #                 if (self.config["add_uniform"]):
+    #                     if (self.config["uniform_scheduler"]):
+    #                         self.uniform_count = int(self.config["batch"] * self.config["uniform_rate"] * math.cos((math.pi / 2) * (epoch / self.config["epochs"])))
+    #                     input_y, condition_X = addUniform(input_y, condition_X, self.uniform_count, self.X_mean, self.y_mean, self.X_var, self.y_var, self.config)
+
+    #                 delta_p = torch.zeros(input_y.shape[0], input_y.shape[1], 1).to(input_y)
+    #                 # print("input_y : ", input_y.size())
+    #                 # print("condition_X : ", condition_X.size())
+    #                 # print("delta_p: ", delta_p.size())
+    #                 approx21, delta_log_p2 = self.prior(input_y, condition_X, delta_p)
+
+    #                 # forword       
+    #                 input_normal = torch.normal(mean = 0.0, std = 1.0, size=(input_y.shape)).to(self.device)
+    #                 delta_p_forword = torch.zeros(input_normal.shape[0], input_normal.shape[1], 1).to(input_y)
+    #                 # print("input_normal : ", input_normal.size())
+    #                 # print("condition_X : ", condition_X.size())
+    #                 # print("delta_p_forword: ", delta_p_forword.size())
+    #                 approx21_forword, delta_log_p2_forword = self.prior(input_normal, condition_X, delta_p_forword, reverse=True)
+    #                 smax = torch.nn.Softmax(dim=1)
+    #                 y_pre = smax(approx21_forword.squeeze(1))
+    #                 y_target = x[1].to(self.device)
+    #                 # print("y_pre", y_pre.size())
+    #                 # print("y_target", y_target.size())
+    #                 # print("y_pre", y_pre[:1])
+    #                 # print("y_target", y_target)
+    #                 loss_ce = loss_ce_fn(y_pre, y_target)
+
+    #                 approx2 = standard_normal_logprob(approx21).view(input_y.size()[0], -1).sum(1, keepdim=True)
+                
+    #                 delta_log_p2 = delta_log_p2.view(input_y.size()[0], input_y.shape[1], 1).sum(1)
+    #                 log_p2 = (approx2 - delta_log_p2)
+
+    #                 loss_ll = -log_p2.mean()
+    #                 loss = loss_ll + loss_ce
+    #                 self.optimizer.zero_grad()
+    #                 if self.config["image_task"]:
+    #                     self.encoder_optimizer.zero_grad()
+    #                 loss.backward()
+    #                 self.optimizer.step()
+    #                 if self.config["image_task"]:
+    #                     self.encoder_optimizer.step()
+
+    #                 pbar.set_description(
+    #                     f'logP: {loss:.5f}')
+    #                 loss_list.append(loss.item())
+
+    #                 if (wandb != None):
+    #                     logMsg = {}
+    #                     logMsg["epoch"] = epoch
+    #                     logMsg["loss"] = loss
+    #                     logMsg["loss_ce"] = loss_ce
+    #                     logMsg["loss_ll"] = loss_ll
+    #                     wandb.log(logMsg)
+    #                     wandb.watch(self.prior,log = "all", log_graph=True)
+                    
+                
+    #             # epoch
+    #             if (self.config["lr_scheduler"] == "cos"):
+    #                 self.model_scheduler.step()
+    #             self.save(f'result/{self.config["output_folder"]}/flow_{str(epoch).zfill(2)}.pt')
+    #             if self.config["image_task"]:
+    #                 self.save_encoder(f'result/{self.config["output_folder"]}/encoder_{str(epoch).zfill(2)}.pt')
+    #     return loss_list
 
     def save(self, path) -> None:
         torch.save(self.prior.state_dict(), path)
@@ -210,6 +396,9 @@ class UncertaintyTrainer:
         self.encoder.load_state_dict(torch.load(path))
         # self.prior.load_state_dict(torch.load(path, map_location=self.gpu))
 
+    def load_sampler(self, path) -> None:
+        self.sampler = FlowSampler((self.cond_size, 1), '128-128', 1)
+        self.sampler.load(path)
 
     def loadValDataset(self):
         show_range = 5 * self.config["condition_scale"]
@@ -292,7 +481,6 @@ class UncertaintyTrainer:
         logprob_vec = []
         target_vec = []
         entropy_vec = []
-        smax = torch.nn.Softmax(dim=1)
 
         for i_batch, x in tqdm(enumerate(val_loader)):
             # y_one_hot = torch.nn.functional.one_hot(x[1], self.N_classes).to(self.device)
@@ -303,13 +491,15 @@ class UncertaintyTrainer:
             input_z = torch.normal(mean = 0.0, std = 1.0, size=(self.config["sample_count"] , self.N_classes)).unsqueeze(1).to(self.device)
             delta_p = torch.zeros(input_z.shape[0], input_z.shape[1], 1).to(input_z)
 
-            # print("input_z :", input_z.size())
-            # print("condition :", condition.size())
-            # print("delta_p :", delta_p.size())
             approx21, delta_log_p2 = self.prior(input_z, condition, delta_p, reverse=True)
+            # print("approx21", approx21[:1])
+            approx21 = torch.clamp(approx21, min=0, max=1)
+            approxSum = torch.sum(approx21, 2).unsqueeze(1).expand(approx21.size())
+            approx21 /= approxSum
+            # print("approx21", approx21[:1])
+            probs = approx21.detach().squeeze(1)
+            log_probs = torch.log(probs.clamp(min=self.eps))
 
-            # y_pre = smax(approx21.squeeze(1))
-            log_probs = F.log_softmax(approx21.detach().squeeze(1), dim=1)
             entropy_vec.append(self.entropy_from_logprobs(log_probs))
             logprob_vec.append(log_probs)
             target_vec.append(y)
@@ -360,11 +550,11 @@ class UncertaintyTrainer:
         # ece = class_ECE(y=target_vec, log_probs=logprob_vec, probs=None, nbins=10)
         return  err, ll#, brier, ece
 
-    def rot_measurements(self):
+    def rot_measurements(self, rotations, corruptions):
         err_list = []
         ll_list = []
         # all measurements of err, ll, ece, brier
-        for rotation, corruption in [(0, 0)] + [] +[(rot, 0) for rot in range(15, 181, 15)]:
+        for rotation, corruption in [(0, 0)] + corruptions[self.config["dataset"]] + rotations[self.config["dataset"]]:
             row_to_add = self.row_to_add_proto.copy()
             row_to_add.update({"rotation": rotation, "corruption": corruption})
             rotation = None if rotation == 0 else rotation
