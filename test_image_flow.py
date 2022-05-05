@@ -23,15 +23,31 @@ def main(config, device, model_path, encoder_path):
     trainer.loadValImageDataset()
     # trainer.sampleImageAcc()
     
+    corruptions = {
+    "CIFAR10": [(0, cor) for cor in range(1, 6)],
+    # "CIFAR100": [(0, cor) for cor in range(1, 6)],
+    "MNIST": [],
+    # "Fashion": [],
+    # "SVHN": []
+    }
+
+    rotations = {
+        "CIFAR10": [],
+        # "CIFAR100": [],
+        "MNIST": [(rot, 0) for rot in range(15, 181, 15)],
+        # "Fashion": [],
+        # "SVHN": []
+    }
+
     target_datasets = {
     "MNIST": ["Fashion"],
     # "Fashion": ["MNIST", "KMNIST"],
-    # "CIFAR10": ["SVHN"],
+    "CIFAR10": ["SVHN"],
     # "CIFAR100": ["SVHN"],
     # "SVHN": ["CIFAR10"]
     }
     for i in range(10):
-        err_list, ll_list = trainer.rot_measurements()
+        err_list, ll_list = trainer.rot_measurements(rotations, corruptions)
         err_props = trainer.rejection_measurements(target_datasets)
     
 
