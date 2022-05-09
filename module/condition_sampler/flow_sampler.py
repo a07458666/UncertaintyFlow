@@ -95,7 +95,8 @@ class FlowSampler:
                 self.save(path)
         
         if save_model and save_dir is not None:
-            os.symlink(path, os.path.join(save_dir, 'sampler_last.pt'))
+            path = os.path.join(save_dir, 'sampler_last.pt')
+            self.save(path)
         
         return loss_list
 

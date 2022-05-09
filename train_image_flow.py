@@ -35,14 +35,13 @@ def main(config, device):
     # condition_sampler
     if ("condition_sampler" in config.keys() and config["condition_sampler"]):
         print("condition_sampler")
-        trainer.load_encoder(config["pre_train_model_path"])
         trainer.load_sampler(config["sampler_path"])
         trainer.loadSamplerDataset(config["sampler_dataset"])
         trainer.fit_sampler()
     else:
         trainer.fit()
     trainer.save(f'result/{config["output_folder"]}/flow_last.pt')
-    trainer.save_encoder(f'result/{config["output_folder"]}/encoder_last.pt')
+    # trainer.save_encoder(f'result/{config["output_folder"]}/encoder_last.pt')
 
 if __name__ == '__main__':
     # args

@@ -37,5 +37,5 @@ lr_scheduler: "cos"
 
 condition_sampler: True
 pre_train_model_path: "./result/mnist_dim32_f512_sampler/encoder_39.pt"
-sampler_path: "./result/mnist_dim32_f512_sampler/sampler_last.pt"
+sampler_path: "./result/mnist_dim32_f512_sampler/sampler_49.pt"
 sampler_dataset: "./result/mnist_dim32_f512_sampler/dataset.npz"

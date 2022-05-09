@@ -24,7 +24,8 @@ def main(config, device, model_path, encoder_path):
     # trainer.sampleImageAcc()
     
     corruptions = {
-    "CIFAR10": [(0, cor) for cor in range(1, 6)],
+    # "CIFAR10": [(0, cor) for cor in range(1, 6)],
+    "CIFAR10": [],
     # "CIFAR100": [(0, cor) for cor in range(1, 6)],
     "MNIST": [],
     # "Fashion": [],

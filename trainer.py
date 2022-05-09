@@ -131,7 +131,7 @@ class UncertaintyTrainer:
         else:
             self.prior = cnf(self.config["inputDim"], self.config["flow_modules"], self.cond_size, 1)
         if self.config["image_task"]:
-            self.encoder = MyResNet(in_channels = self.input_channels, out_features = self.cond_size)
+            self.encoder = MyResNet(in_channels = self.input_channels, out_features = self.config["inputDim"])
         return
 
     def defOptimizer(self) -> None:
@@ -242,6 +242,23 @@ class UncertaintyTrainer:
         weight = torch.cat([true_data_weight, noise_weight])[idxs, :]
         return input_y, condition_X, weight
 
+    def fit_ce(self, input_y, condition_X, y_target) -> list:
+        loss_ce_fn = torch.nn.CrossEntropyLoss()
+        input_normal = torch.normal(mean = 0.0, std = 1.0, size=(input_y.shape)).to(self.device)
+        delta_p_forword = torch.zeros(input_normal.shape[0], input_normal.shape[1], 1).to(input_y)
+        # print("input_normal : ", input_normal.size())
+        # print("condition_X : ", condition_X.size())
+        # print("delta_p_forword: ", delta_p_forword.size())
+        approx21_forword, delta_log_p2_forword = self.prior(input_normal, condition_X, delta_p_forword, reverse=True)
+        smax = torch.nn.Softmax(dim=1)
+        y_pre = smax(approx21_forword.squeeze(1))
+        # print("y_pre", y_pre.size())
+        # print("y_target", y_target.size())
+        # print("y_pre", y_pre[:1])
+        # print("y_target", y_target)
+        loss_ce = loss_ce_fn(y_pre, y_target)
+        return loss_ce
+
     def fit_sampler(self) -> list:
         self.prior.train()
         self.encoder.eval()
@@ -275,7 +292,9 @@ class UncertaintyTrainer:
 
                     # print("log_p2 : ", log_p2.size())
                     # print("weight : ", weight.size())
-                    loss = -(log_p2 * weight).mean()
+
+                    loss_ce = self.fit_ce(input_y, condition_X, x[1].to(self.device))
+                    loss = -(log_p2 * weight).mean() + loss_ce
 
                     self.optimizer.zero_grad()
                     loss.backward()
@@ -485,7 +504,7 @@ class UncertaintyTrainer:
         for i_batch, x in tqdm(enumerate(val_loader)):
             # y_one_hot = torch.nn.functional.one_hot(x[1], self.N_classes).to(self.device)
             y = x[1].to(self.device)            
-            condition_feature = self.encoder(x[0])
+            condition_feature = self.encoder.forward_flatten(x[0])
             condition = condition_feature.unsqueeze(2).to(self.device)
 
             input_z = torch.normal(mean = 0.0, std = 1.0, size=(self.config["sample_count"] , self.N_classes)).unsqueeze(1).to(self.device)
