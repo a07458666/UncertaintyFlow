@@ -4,6 +4,7 @@
 /dataset/**/*.txt
 /dataset/*
 /.vscode/
+/log/
 *.pyc
 /lightning_logs/
 /.ipynb_checkpoints/
