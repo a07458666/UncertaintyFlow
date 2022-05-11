@@ -611,7 +611,7 @@ class UncertaintyTrainer:
         return 
     
 
-    def sampling(self, loader, mean = 0.0, std = 1.0) -> float:
+    def sampling(self, loader, sample_n = 1, mean = 0.0, std = 1.0) -> float:
         self.prior.eval()
         self.encoder.eval()
         approx21_vec = []
@@ -620,11 +620,14 @@ class UncertaintyTrainer:
 
         for i_batch, x in tqdm(enumerate(loader)):
             # y_one_hot = torch.nn.functional.one_hot(x[1], self.N_classes).to(self.device)
+            
             image, target = x[0].to(self.device), x[1].to(self.device)
+
             condition_feature = self.encoder(image)
             condition = condition_feature.unsqueeze(2).to(self.device)
-            
-            input_z = torch.normal(mean = mean, std = std, size=(self.config["sample_count"] , self.N_classes)).unsqueeze(1).to(self.device)
+            condition = condition.repeat(sample_n, 1, 1)
+
+            input_z = torch.normal(mean = mean, std = std, size=(sample_n * self.config["sample_count"] , self.N_classes)).unsqueeze(1).to(self.device)
             delta_p = torch.zeros(input_z.shape[0], input_z.shape[1], 1).to(input_z)
 
             approx21, delta_log_p2 = self.prior(input_z, condition, delta_p, reverse=True)
@@ -634,8 +637,11 @@ class UncertaintyTrainer:
             probs /= probsSum
 
             probs = probs.detach().squeeze(1)
+            probs = probs.view(sample_n, -1, self.N_classes)
+            probs_mean = torch.mean(probs, dim=0, keepdim=False)
+
             approx21_vec.append(approx21)
-            prob_vec.append(probs)
+            prob_vec.append(probs_mean)
             target_vec.append(target)
 
         prob_vec = torch.cat(prob_vec, dim=0)
@@ -645,13 +651,7 @@ class UncertaintyTrainer:
         return prob_vec, target_vec, approx21_vec 
 
     def sampleImageAcc(self, MC_sample = 1, mean = 0.0, std = 1.0) -> float:        
-        probs, target, approx21 = self.sampling(self.val_loader, mean, std)
-        for i in range(MC_sample - 1):
-            probs_tmp, _, approx21_tmp = self.sampling(self.val_loader, mean, std)
-            probs += probs_tmp
-            approx21 += approx21_tmp
-        probs /= MC_sample
-        approx21 /= MC_sample
+        probs, target, approx21 = self.sampling(self.val_loader, MC_sample, mean, std)
         acc = accuracy(probs, target, topk=(1,))
         print("acc : ", acc)
         return acc
