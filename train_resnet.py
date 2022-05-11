@@ -27,7 +27,7 @@ class TrainImageClassification():
         self.lr = config["lr"]
         self.train_loader, self.val_loader,  self.N_classes, self.input_channels = self.loadImageDataset(config)
         self.model = MyResNet(in_channels = self.input_channels, out_features = self.N_classes).to(self.device)
-        self.optimizer = optim.SGD(self.model.parameters(), lr=self.lr, momentum=0.9)
+        self.optimizer = optim.SGD(self.model.parameters(), lr=self.lr, momentum=0.9, weight_decay=5e-4)
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=self.epoch)
         self.loss_fn = nn.CrossEntropyLoss()
         

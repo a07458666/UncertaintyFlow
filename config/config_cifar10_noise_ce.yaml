@@ -1,6 +1,6 @@
 # config.yaml
 time_seed: 0
-output_folder: "cifar_dim32_f512_sampler"
+output_folder: "train_CIFAR10_noise"
 
 image_task: True
 workers: 32
@@ -8,7 +8,8 @@ workers: 32
 # 1d: my_1d, wiggle, matern, andrew, agw, 
 # 2d: origin, axis
 # image: 'MNIST'    (image_task set True
-dataset: "CIFAR10"
+#noise "cifar-10"
+dataset: "cifar-10"
 remark: ""
 condition_scale: 1
 position_encode: False
@@ -22,7 +23,7 @@ batch: 256
 epochs: 200
 flow_modules: '32-32-32-32-32'
 cond_size: 512
-lr: 1.0e-1
+lr: 1.0e-2
 inputDim: 10 # for image N_classes
 add_uniform: False
 uniform_scheduler: False
@@ -35,7 +36,11 @@ eval_data:
 # cos, ""
 lr_scheduler: "cos"
 
-condition_sampler: True
-pre_train_model_path: "./result/cifar_dim32_f512_sampler/encoder_39.pt"
-sampler_path: "./result/cifar_dim32_f512_sampler/sampler_49.pt"
-sampler_dataset: "./result/cifar_dim32_f512_sampler/dataset.npz"
+# noise
+algorithm: "flow_ce"
+noise_task: true
+noise_type: 'none' #sym  0.2 0.5 0.8 #asym  0.2 0.3 0.4
+percent: 0
+
+loss_ce: true
+co_teaching: false
