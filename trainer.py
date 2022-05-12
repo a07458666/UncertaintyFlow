@@ -652,7 +652,7 @@ class UncertaintyTrainer:
 
     def sampleImageAcc(self, MC_sample = 1, mean = 0.0, std = 1.0) -> float:        
         probs, target, approx21 = self.sampling(self.val_loader, MC_sample, mean, std)
-        acc = accuracy(probs, target, topk=(1,))
+        acc = accuracy(probs, target, topk=(1,))[0].cpu().item()
         print("acc : ", acc)
         return acc
 
