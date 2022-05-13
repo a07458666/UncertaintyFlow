@@ -24,6 +24,7 @@ epochs: 200
 flow_modules: '32-32-32-32-32'
 cond_size: 512
 lr: 1.0e-2
+encoder_lr: 1.0e-3
 inputDim: 10 # for image N_classes
 add_uniform: False
 uniform_scheduler: False
@@ -31,7 +32,7 @@ uniform_rate: 0.1
 # eval
 sample_count: 256
 eval_data:
-  count: 300
+  count: 256
 
 # cos, ""
 lr_scheduler: "cos"
@@ -39,6 +40,7 @@ lr_scheduler: "cos"
 # noise
 algorithm: "flow"
 noise_task: true
-noise_type: 'none' #sym  0.2 0.5 0.8 #asym  0.2 0.3 0.4
-percent: 0
+noise_type: 'sym' #sym  0.2 0.5 0.8 #asym  0.2 0.3 0.4
+percent: 0.2
 co_teaching: false
+loss_ce: false
