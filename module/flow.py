@@ -102,7 +102,7 @@ def build_model( input_dim, hidden_dims, context_dim, num_blocks, conditional, c
 
 def cnf(input_dim,dims,zdim,num_blocks, encode_dims = 0):
     dims = tuple(map(int, dims.split("-")))
-    model = build_model(input_dim, dims, zdim, num_blocks, True, encode_dims).cuda()
+    model = build_model(input_dim, dims, zdim, num_blocks, True, encode_dims)
     print("Number of trainable parameters of Point CNF: {}".format(count_parameters(model)))
     return model
 
