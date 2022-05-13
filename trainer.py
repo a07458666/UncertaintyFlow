@@ -70,8 +70,6 @@ class UncertaintyTrainer:
         return
 
     def loadNoiseDataset(self) -> None:
-        
-        
         dataloaders = cifar_dataloader(cifar_type=self.config['dataset'], root="./dataset", batch_size=self.batch_size, 
                             num_workers=self.config["workers"], noise_type=self.config['noise_type'], percent=self.config['percent'])
         self.train_loader = dataloaders.run(mode='train_single')
@@ -82,32 +80,17 @@ class UncertaintyTrainer:
         self.num_test_images = len(self.val_loader.dataset)
         return
 
-    def loadSamplerDataset(self, path) -> None:
-        dataset = np.load(self.config["sampler_dataset"])
-
-        X_train = dataset['x']
-        y_train = dataset['y']
-        self.X_mean = dataset['mean']
-        self.X_var = dataset['var']        
-        self.uniform_count = int(self.config["batch"] * self.config["uniform_rate"])
-
-        trainset = MyDataset(torch.Tensor(X_train).to(self.device), torch.Tensor(y_train).to(torch.int64).to(self.device), transform=None)
-        self.train_loader = data.DataLoader(trainset, shuffle=True, batch_size=self.batch_size, drop_last = True)
-        return
-
     def creatModel(self) -> None:
-        if self.config["linear_encode"]:
-            self.prior = cnf(self.config["inputDim"], self.config["flow_modules"], self.cond_size, 1, self.config["linear_encode_m"]).to(self.device)
-        else:
-            self.prior = cnf(self.config["inputDim"], self.config["flow_modules"], self.cond_size, 1).to(self.device)
-        if self.config["image_task"]:
-            self.encoder = MyResNet(in_channels = self.input_channels, out_features = self.cond_size).to(self.device)
+        self.prior = cnf(self.config["inputDim"], self.config["flow_modules"], self.cond_size, 1).to(self.device)
+        self.encoder = MyResNet(in_channels = self.input_channels, out_features = self.cond_size).to(self.device)
         return
 
     def defOptimizer(self) -> None:
         self.optimizer = optim.Adam(self.prior.parameters(), lr=self.config["lr"])
-        self.encoder_optimizer = optim.Adam(self.encoder.parameters(), lr=self.config["lr"])
+        # self.encoder_optimizer = optim.Adam(self.encoder.parameters(), lr=self.config["encoder_lr"])
+        self.encoder_optimizer = optim.SGD(self.encoder.parameters(), lr=self.config["encoder_lr"], momentum=0.9, weight_decay=5e-4)
         return
+
 
     def train(self, epoch) -> list:
         self.prior.train()
@@ -128,13 +111,6 @@ class UncertaintyTrainer:
             condition_X_feature = self.encoder(image)
             condition_X = condition_X_feature.unsqueeze(2).to(self.device)
 
-
-
-            if (self.config["add_uniform"]):
-                if (self.config["uniform_scheduler"]):
-                    self.uniform_count = int(self.config["batch"] * self.config["uniform_rate"] * math.cos((math.pi / 2) * (epoch / self.config["epochs"])))
-                input_y, condition_X = addUniform(input_y, condition_X, self.uniform_count, self.X_mean, self.y_mean, self.X_var, self.y_var, self.config)
-
             delta_p = torch.zeros(input_y.shape[0], input_y.shape[1], 1).to(input_y)
             # print("input_y : ", input_y.size())
             # print("condition_X : ", condition_X.size())
@@ -153,12 +129,10 @@ class UncertaintyTrainer:
                 loss = -log_p2.mean()
 
             self.optimizer.zero_grad()
-            if self.config["image_task"]:
-                self.encoder_optimizer.zero_grad()
+            self.encoder_optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
-            if self.config["image_task"]:
-                self.encoder_optimizer.step()
+            self.encoder_optimizer.step()
 
             pbar.set_description(
                 f'epoch: {epoch}, logP: {loss:.5f}')
@@ -172,8 +146,7 @@ class UncertaintyTrainer:
                 wandb.watch(self.prior,log = "all", log_graph=True)
         
         # epoch
-        if (self.config["lr_scheduler"] == "cos"):
-            self.model_scheduler.step()
+        self.model_scheduler.step()
         self.save(f'result/{self.config["output_folder"]}/flow_{str(epoch).zfill(2)}.pt')
         if self.config["image_task"]:
             self.save_encoder(f'result/{self.config["output_folder"]}/encoder_{str(epoch).zfill(2)}.pt')
@@ -457,90 +430,6 @@ class UncertaintyTrainer:
                 self.save(f'result/{self.config["output_folder"]}/flow_{str(epoch).zfill(2)}.pt')
         return loss_list
 
-    # def fit_loss(self) -> list:
-    #     self.prior.train()
-    #     if self.config["image_task"]:
-    #         self.encoder.train()
-    #     loss_list = []
-    #     loss_ce_fn = torch.nn.CrossEntropyLoss()
-    #     with tqdm(range(self.config["epochs"])) as pbar:
-    #         for epoch in pbar:
-    #             for i, x in enumerate(self.train_loader):
-    #                 if (self.config["image_task"]):
-    #                     input_y_one_hot = torch.nn.functional.one_hot(x[1], self.N_classes)
-    #                     input_y_one_hot = input_y_one_hot.type(torch.cuda.FloatTensor)
-    #                     input_y = input_y_one_hot.unsqueeze(1).to(self.device)
-                        
-    #                     condition_X_feature = self.encoder(x[0])
-    #                     condition_X = condition_X_feature.unsqueeze(2).to(self.device)
-    #                 else:
-    #                     input_y = x[1].unsqueeze(1)
-    #                     condition_X = x[0].unsqueeze(1)
-
-    #                 if (self.config["add_uniform"]):
-    #                     if (self.config["uniform_scheduler"]):
-    #                         self.uniform_count = int(self.config["batch"] * self.config["uniform_rate"] * math.cos((math.pi / 2) * (epoch / self.config["epochs"])))
-    #                     input_y, condition_X = addUniform(input_y, condition_X, self.uniform_count, self.X_mean, self.y_mean, self.X_var, self.y_var, self.config)
-
-    #                 delta_p = torch.zeros(input_y.shape[0], input_y.shape[1], 1).to(input_y)
-    #                 # print("input_y : ", input_y.size())
-    #                 # print("condition_X : ", condition_X.size())
-    #                 # print("delta_p: ", delta_p.size())
-    #                 approx21, delta_log_p2 = self.prior(input_y, condition_X, delta_p)
-
-    #                 # forword       
-    #                 input_normal = torch.normal(mean = 0.0, std = 1.0, size=(input_y.shape)).to(self.device)
-    #                 delta_p_forword = torch.zeros(input_normal.shape[0], input_normal.shape[1], 1).to(input_y)
-    #                 # print("input_normal : ", input_normal.size())
-    #                 # print("condition_X : ", condition_X.size())
-    #                 # print("delta_p_forword: ", delta_p_forword.size())
-    #                 approx21_forword, delta_log_p2_forword = self.prior(input_normal, condition_X, delta_p_forword, reverse=True)
-    #                 smax = torch.nn.Softmax(dim=1)
-    #                 y_pre = smax(approx21_forword.squeeze(1))
-    #                 y_target = x[1].to(self.device)
-    #                 # print("y_pre", y_pre.size())
-    #                 # print("y_target", y_target.size())
-    #                 # print("y_pre", y_pre[:1])
-    #                 # print("y_target", y_target)
-    #                 loss_ce = loss_ce_fn(y_pre, y_target)
-
-    #                 approx2 = standard_normal_logprob(approx21).view(input_y.size()[0], -1).sum(1, keepdim=True)
-                
-    #                 delta_log_p2 = delta_log_p2.view(input_y.size()[0], input_y.shape[1], 1).sum(1)
-    #                 log_p2 = (approx2 - delta_log_p2)
-
-    #                 loss_ll = -log_p2.mean()
-    #                 loss = loss_ll + loss_ce
-    #                 self.optimizer.zero_grad()
-    #                 if self.config["image_task"]:
-    #                     self.encoder_optimizer.zero_grad()
-    #                 loss.backward()
-    #                 self.optimizer.step()
-    #                 if self.config["image_task"]:
-    #                     self.encoder_optimizer.step()
-
-    #                 pbar.set_description(
-    #                     f'logP: {loss:.5f}')
-    #                 loss_list.append(loss.item())
-
-    #                 if (wandb != None):
-    #                     logMsg = {}
-    #                     logMsg["epoch"] = epoch
-    #                     logMsg["loss"] = loss
-    #                     logMsg["loss_ce"] = loss_ce
-    #                     logMsg["loss_ll"] = loss_ll
-    #                     wandb.log(logMsg)
-    #                     wandb.watch(self.prior,log = "all", log_graph=True)
-                    
-                
-    #             # epoch
-    #             if (self.config["lr_scheduler"] == "cos"):
-    #                 self.model_scheduler.step()
-    #             self.save(f'result/{self.config["output_folder"]}/flow_{str(epoch).zfill(2)}.pt')
-    #             if self.config["image_task"]:
-    #                 self.save_encoder(f'result/{self.config["output_folder"]}/encoder_{str(epoch).zfill(2)}.pt')
-    #     return loss_list
-
     def save(self, path) -> None:
         torch.save(self.prior.state_dict(), path)
 
@@ -558,32 +447,6 @@ class UncertaintyTrainer:
     def load_sampler(self, path) -> None:
         self.sampler = FlowSampler((self.cond_size, 1), '128-128', 1)
         self.sampler.load(path)
-
-    def loadValDataset(self):
-        show_range = 5 * self.config["condition_scale"]
-        torch.manual_seed(0)
-        var_scale = self.config["var_scale"]
-        gt_X, gt_y = loadDataset(self.config["dataset"])
-        gt_X, gt_y = sortData(gt_X, gt_y)
-        self.config["eval_data"]["count"] *= self.config["condition_scale"]
-        X_eval = np.linspace(-show_range, show_range, self.config["eval_data"]["count"]).reshape(-1, 1)
-        y_eval = np.linspace(0, 0, self.config["eval_data"]["count"]).reshape(-1, 1)
-        if self.config["position_encode"]:
-            X_eval = position_encode(X_eval, self.config["position_encode_m"])
-        if self.config["condition_scale"] != 1:
-            X_eval = X_eval * self.config["condition_scale"]
-            gt_X = gt_X * self.config["condition_scale"]
-        self.gt_X = gt_X
-        self.gt_y = gt_y
-        self.val_loader = MyDataset(torch.Tensor(X_eval).to(self.device), torch.Tensor(y_eval).to(self.device), transform=None)
-
-    def loadValImageDataset(self) -> None:
-        _, _, val_loader, input_channels, N_classes, _ = get_image_loader(self.config["dataset"], batch_size=self.config["sample_count"], cuda=True, workers=self.config["workers"], distributed=False)
-
-        self.val_loader = val_loader
-        self.N_classes = N_classes
-        self.input_channels = input_channels
-        return
 
     def sample(self) -> None:
         self.prior.eval()
@@ -610,13 +473,13 @@ class UncertaintyTrainer:
         visualize_uncertainty(savePath, self.gt_X.reshape(-1), self.gt_y.reshape(-1), x_list, mean_list, var_list)
         return 
     
-
     def sampling(self, loader, sample_n = 1, mean = 0.0, std = 1.0) -> float:
         self.prior.eval()
         self.encoder.eval()
         approx21_vec = []
         target_vec = []
         prob_vec = []
+        probs_all_vec = []
 
         for i_batch, x in tqdm(enumerate(loader)):
             # y_one_hot = torch.nn.functional.one_hot(x[1], self.N_classes).to(self.device)
@@ -630,28 +493,31 @@ class UncertaintyTrainer:
             input_z = torch.normal(mean = mean, std = std, size=(sample_n * self.config["sample_count"] , self.N_classes)).unsqueeze(1).to(self.device)
             delta_p = torch.zeros(input_z.shape[0], input_z.shape[1], 1).to(input_z)
 
-            approx21, delta_log_p2 = self.prior(input_z, condition, delta_p, reverse=True)
+            approx21, _ = self.prior(input_z, condition, delta_p, reverse=True)
 
             probs = torch.clamp(approx21, min=0, max=1)
             probsSum = torch.sum(probs, 2).unsqueeze(1).expand(probs.size())
             probs /= probsSum
 
-            probs = probs.detach().squeeze(1)
+            probs = probs.detach().squeeze(1)            
             probs = probs.view(sample_n, -1, self.N_classes)
+            probs_all = probs
             probs_mean = torch.mean(probs, dim=0, keepdim=False)
 
-            approx21_vec.append(approx21)
-            prob_vec.append(probs_mean)
-            target_vec.append(target)
+            probs_all_vec.append(probs_all.data.cpu())
+            approx21_vec.append(approx21.data.cpu())
+            prob_vec.append(probs_mean.data.cpu())
+            target_vec.append(target.data.cpu())
 
         prob_vec = torch.cat(prob_vec, dim=0)
         target_vec = torch.cat(target_vec, dim=0)
         approx21_vec = torch.cat(approx21_vec, dim=0)
+        probs_all_vec = torch.cat(probs_all_vec, dim=1)
 
-        return prob_vec, target_vec, approx21_vec 
+        return prob_vec.data.cpu(), target_vec.data.cpu(), approx21_vec.data.cpu() ,probs_all_vec.data.cpu()
 
     def sampleImageAcc(self, MC_sample = 1, mean = 0.0, std = 1.0) -> float:        
-        probs, target, approx21 = self.sampling(self.val_loader, MC_sample, mean, std)
+        probs, target, _, _ = self.sampling(self.val_loader, MC_sample, mean, std)
         acc = accuracy(probs, target, topk=(1,))[0].cpu().item()
         print("acc : ", acc)
         return acc
