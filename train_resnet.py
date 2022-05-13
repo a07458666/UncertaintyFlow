@@ -28,6 +28,7 @@ class TrainImageClassification():
         self.train_loader, self.val_loader,  self.N_classes, self.input_channels = self.loadImageDataset(config)
         self.model = MyResNet(in_channels = self.input_channels, out_features = self.N_classes).to(self.device)
         self.optimizer = optim.SGD(self.model.parameters(), lr=self.lr, momentum=0.9, weight_decay=5e-4)
+        # self.optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=self.epoch)
         self.loss_fn = nn.CrossEntropyLoss()
         
@@ -63,9 +64,10 @@ class TrainImageClassification():
             output = self.model(data)
             loss_batch = self.loss_fn(output, target)
             acc_batch = self.accuracy(output, target)[0].cpu()
-
+            
             loss += loss_batch.item()
             acc += acc_batch
+            # print("batch_idx {} acc_batch {} acc {}".format(batch_idx, acc_batch, acc))
 
             self.optimizer.zero_grad()
             loss_batch.backward()
