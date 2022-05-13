@@ -33,7 +33,7 @@ def save_results(config, last_ten, best_acc, best_epoch, jsonfile):
 
 def plot_results(epochs, test_acc, plotfile):
     plt.style.use('ggplot')
-    plt.plot(np.arange(1, epochs), test_acc, label='scratch - acc')
+    plt.plot(np.arange(0, epochs), test_acc, label='scratch - acc')
     plt.xticks(np.arange(0, epochs + 1, max(1, epochs // 20))) # train epochs
     plt.xlabel('Epoch')
     plt.yticks(np.arange(0, 101, 10)) # Acc range: [0, 100]
@@ -43,7 +43,7 @@ def plot_results(epochs, test_acc, plotfile):
 def get_log_name(path, config):
     # log_name =  config['dataset'] + '_' + config['algorithm'] + '_' + config['noise_type'] + '_' + \
     #             str(config['percent']) + '_seed' + str(config['seed']) + '.json'
-    log_name =  config['dataset'] + '_' + config['algorithm'] + '_' + config['noise_type'] + '_' + \
+    log_name =  config["output_folder"] + '_' + config['dataset'] + '_' + config['algorithm'] + '_' + config['noise_type'] + '_' + \
                  str(config['percent']) + '.json'
     if os.path.exists('./log') is False:
         os.mkdir('./log')
@@ -65,10 +65,7 @@ def main(config, device):
     best_acc, best_epoch = 0.0, 0
 
     for epoch in range(config["epochs"]):
-        if (config["co_teaching"]):
-            trainer.train_co_teaching(epoch)
-        else:
-            trainer.train(epoch)
+        trainer.train(epoch)
         # evaluate 
         test_acc = trainer.sampleImageAcc()
         nni.report_intermediate_result(test_acc)
