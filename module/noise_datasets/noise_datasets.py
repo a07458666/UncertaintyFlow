@@ -277,7 +277,7 @@ class cifar_dataloader():
                 dataset=train_dataset, 
                 batch_size=self.batch_size,
                 shuffle=True,
-                pin_memory=True,
+                pin_memory=False,
                 drop_last=True,
                 num_workers=self.num_workers)           
             return train_loader 
@@ -292,7 +292,7 @@ class cifar_dataloader():
                 dataset=train_dataset, 
                 batch_size=self.batch_size,
                 shuffle=True,
-                pin_memory=True,
+                pin_memory=False,
                 drop_last=True,
                 num_workers=self.num_workers)           
             return train_loader 
@@ -307,7 +307,7 @@ class cifar_dataloader():
                 dataset=test_dataset, 
                 batch_size=self.batch_size,
                 shuffle=False,
-                pin_memory=True,
+                pin_memory=False,
                 drop_last=True,
                 num_workers=self.num_workers)             
             return test_loader              
