@@ -1,4 +1,5 @@
 import os
+
 import torch
 import numpy as np
 from tqdm import tqdm
@@ -43,6 +44,7 @@ class UncertaintyTrainer:
         self.creatModel()
         self.defOptimizer()
         self.model_scheduler = CosineAnnealingLR(self.optimizer, T_max=self.config["epochs"])
+        self.encoder_scheduler = CosineAnnealingLR(self.encoder_optimizer, T_max=self.config["epochs"])
         return
 
     def setDataFrame(self, path):
@@ -110,26 +112,25 @@ class UncertaintyTrainer:
             
             condition_X_feature = self.encoder(image)
             condition_X = condition_X_feature.unsqueeze(2).to(self.device)
-
+            # weight = self.getWeightByEntropy(input_y, condition_X)
             delta_p = torch.zeros(input_y.shape[0], input_y.shape[1], 1).to(input_y)
             # print("input_y : ", input_y.size())
             # print("condition_X : ", condition_X.size())
             # print("delta_p: ", delta_p.size())
             approx21, delta_log_p2 = self.prior(input_y, condition_X, delta_p)
+            
 
             approx2 = standard_normal_logprob(approx21).view(input_y.size()[0], -1).sum(1, keepdim=True)
         
             delta_log_p2 = delta_log_p2.view(input_y.size()[0], input_y.shape[1], 1).sum(1)
             log_p2 = (approx2 - delta_log_p2)
 
-            if (self.config['loss_ce']):
-                loss_ce = self.fit_ce(input_y, condition_X, x[1].to(self.device))
-                loss = -log_p2.mean() + loss_ce
-            else:
-                loss = -log_p2.mean()
+            # loss = -(log_p2 * weight).mean()
+            loss = -log_p2.mean()
 
             self.optimizer.zero_grad()
             self.encoder_optimizer.zero_grad()
+            condition_X.retain_grad()
             loss.backward()
             self.optimizer.step()
             self.encoder_optimizer.step()
@@ -142,11 +143,14 @@ class UncertaintyTrainer:
                 logMsg = {}
                 logMsg["epoch"] = epoch
                 logMsg["loss"] = loss
+                logMsg["feature_var"] = condition_X.var(dim=1).mean().detach().cpu().item()
+                logMsg["feature_grad"] = condition_X.grad.mean().item()
                 wandb.log(logMsg)
                 wandb.watch(self.prior,log = "all", log_graph=True)
         
         # epoch
         self.model_scheduler.step()
+        self.encoder_scheduler.step()
         self.save(f'result/{self.config["output_folder"]}/flow_{str(epoch).zfill(2)}.pt')
         if self.config["image_task"]:
             self.save_encoder(f'result/{self.config["output_folder"]}/encoder_{str(epoch).zfill(2)}.pt')
@@ -295,6 +299,44 @@ class UncertaintyTrainer:
                 if self.config["image_task"]:
                     self.save_encoder(f'result/{self.config["output_folder"]}/encoder_{str(epoch).zfill(2)}.pt')
         return loss_list
+
+    def getWeightByEntropy(self,input_y, condition_X, sample_n = 1):
+        self.prior.eval()
+        self.encoder.eval()
+        weight = torch.tensor([[1.]] * condition_X.size()[0]).to(self.device)
+
+        condition_loc = condition_X.repeat(sample_n, 1, 1)
+        input_y_loc = input_y.repeat(sample_n, 1, 1)
+        
+        input_normal = torch.normal(mean = 0.0, std = 0, size=(input_y_loc.shape)).to(self.device)
+        delta_p_forword = torch.zeros(input_normal.shape[0], input_normal.shape[1], 1).to(input_y_loc)
+        # print("input_normal : ", input_normal.size())
+        # print("condition_X : ", condition_X.size())
+        # print("delta_p_forword: ", delta_p_forword.size())
+        approx21_forword, _ = self.prior(input_normal, condition_loc, delta_p_forword, reverse=True)
+        approx21_forword = torch.clamp(approx21_forword, min=0, max=1)
+        approxSum = torch.sum(approx21_forword, 2).unsqueeze(1).expand(approx21_forword.size())
+        approx21_forword /= approxSum
+        probs = approx21_forword
+        
+        probs = probs.view(sample_n, -1, self.N_classes)
+        probs = torch.mean(probs, dim=0, keepdim=False)
+        log_probs = torch.log(probs.clamp(min=self.eps))
+
+        entropy = self.entropy_from_logprobs(log_probs).detach().cpu().numpy()
+        # print(entropy)
+        sort_entropy_idxs = np.argsort(entropy, axis=0)
+        # print(sort_entropy_idxs)
+        # accepted_idx = sort_entropy_idxs[int(-self.batch_size/4):]
+        # accepted_idx = sort_entropy_idxs[int(-self.batch_size/10):]
+        accepted_idx = sort_entropy_idxs[int(-self.batch_size/10):]
+        # print(accepted_idx)
+        # print(entropy[accepted_idx])
+        weight[accepted_idx] = 0
+        # print(weight)
+        self.prior.train()
+        self.encoder.train()
+        return weight
 
     def getWeight(self, input_y, condition_X, uniform_count, X_mean, X_var):
         true_data_weight = torch.tensor([[1.]] * condition_X.size()[0]).to(self.device)
@@ -516,7 +558,7 @@ class UncertaintyTrainer:
 
         return prob_vec.data.cpu(), target_vec.data.cpu(), approx21_vec.data.cpu() ,probs_all_vec.data.cpu()
 
-    def sampleImageAcc(self, MC_sample = 1, mean = 0.0, std = 1.0) -> float:        
+    def sampleImageAcc(self, MC_sample = 1, mean = 0.0, std = 0) -> float:        
         probs, target, _, _ = self.sampling(self.val_loader, MC_sample, mean, std)
         acc = accuracy(probs, target, topk=(1,))[0].cpu().item()
         print("acc : ", acc)
