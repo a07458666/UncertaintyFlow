@@ -64,6 +64,12 @@ def main(config, device):
     acc_list, acc_all_list = [], []
     best_acc, best_epoch = 0.0, 0
 
+    #load pre model
+    # model_path = "./result/cifar_noise_fix_encoder_sym05_lr1e2/flow_90.pt"
+    # encoder_path = "./result/cifar_noise_fix_encoder_sym05_lr1e2/encoder_90.pt"
+    # trainer.load(model_path)
+    # trainer.load_encoder(encoder_path)
+
     for epoch in range(config["epochs"]):
         trainer.train(epoch)
         # evaluate 
@@ -74,6 +80,11 @@ def main(config, device):
 
         print('Epoch [%d/%d] Test Accuracy on the %s test images: %.4f %%' % (
                 epoch + 1, config['epochs'], trainer.num_test_images, test_acc))
+        if (wandb != None):
+                logMsg = {}
+                logMsg["epoch"] = epoch
+                logMsg["test_acc"] = test_acc
+                wandb.log(logMsg)
 
         if epoch >= config['epochs'] - 10:
             acc_list.extend([test_acc])
