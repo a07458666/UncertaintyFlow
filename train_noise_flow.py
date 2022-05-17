@@ -65,13 +65,18 @@ def main(config, device):
     best_acc, best_epoch = 0.0, 0
 
     #load pre model
+    if (config["pretrain_encoder"] != ""):
+        encoder_path = "./result/cifar_noise_fix_encoder_sym05_lr1e2/encoder_90.pt"
+        trainer.load_encoder(encoder_path)
     # model_path = "./result/cifar_noise_fix_encoder_sym05_lr1e2/flow_90.pt"
-    # encoder_path = "./result/cifar_noise_fix_encoder_sym05_lr1e2/encoder_90.pt"
     # trainer.load(model_path)
-    # trainer.load_encoder(encoder_path)
+    
 
     for epoch in range(config["epochs"]):
-        trainer.train(epoch)
+        if (config["ssl"]):
+            trainer.trainSSL(epoch)
+        else:
+            trainer.train(epoch)
         # evaluate 
         test_acc = trainer.sampleImageAcc()
         nni.report_intermediate_result(test_acc)

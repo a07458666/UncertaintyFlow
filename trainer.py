@@ -1,3 +1,4 @@
+from distutils.command.config import config
 import os
 
 import torch
@@ -13,7 +14,7 @@ import pandas as pd
 
 
 from module.flow import cnf
-from module.utils import standard_normal_logprob, position_encode, addUniform, sortData, accuracy
+from module.utils import standard_normal_logprob, position_encode, addUniform, sortData, accuracy,set_parameter_requires_grad
 from module.dun_datasets.loader import loadDataset, MyDataset
 from module.visualize import visualize_uncertainty
 from module.resnet import MyResNet
@@ -23,6 +24,7 @@ from module.image.test_methods import class_brier, class_err, class_ll, class_EC
 from module.condition_sampler.flow_sampler import FlowSampler
 from module.noise_datasets.noise_datasets import cifar_dataloader
 from module.losses.loss_coteaching import loss_coteaching
+from module.losses.vicreg import vicreg_loss_func
 
 try:
     import wandb
@@ -74,7 +76,10 @@ class UncertaintyTrainer:
     def loadNoiseDataset(self) -> None:
         dataloaders = cifar_dataloader(cifar_type=self.config['dataset'], root="./dataset", batch_size=self.batch_size, 
                             num_workers=self.config["workers"], noise_type=self.config['noise_type'], percent=self.config['percent'])
-        self.train_loader = dataloaders.run(mode='train_single')
+        if (self.config["ssl"]):
+            self.train_loader = dataloaders.run(mode='train')
+        else:
+            self.train_loader = dataloaders.run(mode='train_single')
         self.val_loader = dataloaders.run(mode='test')
 
         self.N_classes = 10
@@ -85,6 +90,8 @@ class UncertaintyTrainer:
     def creatModel(self) -> None:
         self.prior = cnf(self.config["inputDim"], self.config["flow_modules"], self.cond_size, 1).to(self.device)
         self.encoder = MyResNet(in_channels = self.input_channels, out_features = self.cond_size).to(self.device)
+        if (self.config["fix_encoder"]):
+            set_parameter_requires_grad(self.encoder)
         return
 
     def defOptimizer(self) -> None:
@@ -109,7 +116,8 @@ class UncertaintyTrainer:
             input_y_one_hot = torch.nn.functional.one_hot(target, self.N_classes)
             input_y_one_hot = input_y_one_hot.type(torch.cuda.FloatTensor)
             input_y = input_y_one_hot.unsqueeze(1).to(self.device)
-            
+            if (self.config["blur"]):
+                input_y += torch.normal(mean=0, std=0.2, size=input_y.size()).to(self.device)
             condition_X_feature = self.encoder(image)
             condition_X = condition_X_feature.unsqueeze(2).to(self.device)
             # weight = self.getWeightByEntropy(input_y, condition_X)
@@ -130,6 +138,77 @@ class UncertaintyTrainer:
 
             self.optimizer.zero_grad()
             self.encoder_optimizer.zero_grad()
+            if (not self.config["fix_encoder"]):
+                condition_X.retain_grad()
+            loss.backward()
+            self.optimizer.step()
+            self.encoder_optimizer.step()
+
+            pbar.set_description(
+                f'epoch: {epoch}, logP: {loss:.5f}')
+            loss_list.append(loss.item())
+
+            if (wandb != None):
+                logMsg = {}
+                logMsg["epoch"] = epoch
+                logMsg["loss"] = loss
+                logMsg["feature_var"] = condition_X.var(dim=1).mean().detach().cpu().item()
+                if (not self.config["fix_encoder"]):
+                    logMsg["feature_grad"] = condition_X.grad.mean().item()
+                wandb.log(logMsg)
+                wandb.watch(self.prior,log = "all", log_graph=True)
+        
+        # epoch
+        self.model_scheduler.step()
+        self.encoder_scheduler.step()
+        self.save(f'result/{self.config["output_folder"]}/flow_{str(epoch).zfill(2)}.pt')
+        if self.config["image_task"]:
+            self.save_encoder(f'result/{self.config["output_folder"]}/encoder_{str(epoch).zfill(2)}.pt')
+
+        return acclist
+
+    def trainSSL(self, epoch) -> list:
+        self.prior.train()
+        self.encoder.train()
+        acclist = []
+        loss_list = []
+
+        pbar = tqdm(self.train_loader)
+        for i, x in enumerate(pbar):
+            image, img1, img2, target = x[0].to(self.device), x[1].to(self.device), x[2].to(self.device), x[3].to(self.device), 
+            # print("x[0] : ", x[0].size())
+            # print("x[1] : ", x[1].size())
+            # print("self.N_classes : ", self.N_classes)
+            input_y_one_hot = torch.nn.functional.one_hot(target, self.N_classes)
+            input_y_one_hot = input_y_one_hot.type(torch.cuda.FloatTensor)
+            input_y = input_y_one_hot.unsqueeze(1).to(self.device)
+            if (self.config["blur"]):
+                y_noise_std = self.config["y_noise_std"] * math.cos((math.pi / 2) * (epoch / self.config["epochs"]))
+                input_y += torch.normal(mean=0, std=y_noise_std, size=input_y.size()).to(self.device)
+            
+            condition_X_feature = self.encoder(image)
+            _, _, z1, z2 = self.encoder.forward_ssl(img1, img2)
+            condition_X = condition_X_feature.unsqueeze(2).to(self.device)
+            # weight = self.getWeightByEntropy(input_y, condition_X)
+            delta_p = torch.zeros(input_y.shape[0], input_y.shape[1], 1).to(input_y)
+            # print("input_y : ", input_y.size())
+            # print("condition_X : ", condition_X.size())
+            # print("delta_p: ", delta_p.size())
+            approx21, delta_log_p2 = self.prior(input_y, condition_X, delta_p)
+
+            approx2 = standard_normal_logprob(approx21).view(input_y.size()[0], -1).sum(1, keepdim=True)
+        
+            delta_log_p2 = delta_log_p2.view(input_y.size()[0], input_y.shape[1], 1).sum(1)
+            log_p2 = (approx2 - delta_log_p2)
+
+            loss_vic, loss_vic_sim, loss_vic_var, loss_vic_cov = vicreg_loss_func(z1, z2) # loss
+            # loss = -(log_p2 * weight).mean()
+            cond_reg_loss = torch.clamp(1-torch.sqrt(condition_X.var(dim=1) + self.eps), min=0).mean()
+            loss_ll = -log_p2.mean()
+            loss = loss_ll + loss_vic + (self.config["lambda_reg"] * cond_reg_loss)
+
+            self.optimizer.zero_grad()
+            self.encoder_optimizer.zero_grad()
             condition_X.retain_grad()
             loss.backward()
             self.optimizer.step()
@@ -143,6 +222,11 @@ class UncertaintyTrainer:
                 logMsg = {}
                 logMsg["epoch"] = epoch
                 logMsg["loss"] = loss
+                logMsg["loss_ll"] = loss
+                logMsg["loss_vic"] = loss_vic
+                logMsg["loss_vic_sim"] = loss_vic_sim
+                logMsg["loss_vic_var"] = loss_vic_var
+                logMsg["loss_vic_cov"] = loss_vic_cov
                 logMsg["feature_var"] = condition_X.var(dim=1).mean().detach().cpu().item()
                 logMsg["feature_grad"] = condition_X.grad.mean().item()
                 wandb.log(logMsg)
@@ -532,7 +616,7 @@ class UncertaintyTrainer:
             condition = condition_feature.unsqueeze(2).to(self.device)
             condition = condition.repeat(sample_n, 1, 1)
 
-            input_z = torch.normal(mean = mean, std = std, size=(sample_n * self.config["sample_count"] , self.N_classes)).unsqueeze(1).to(self.device)
+            input_z = torch.normal(mean = mean, std = std, size=(sample_n * self.config["batch"] , self.N_classes)).unsqueeze(1).to(self.device)
             delta_p = torch.zeros(input_z.shape[0], input_z.shape[1], 1).to(input_z)
 
             approx21, _ = self.prior(input_z, condition, delta_p, reverse=True)
