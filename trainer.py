@@ -203,9 +203,10 @@ class UncertaintyTrainer:
 
             loss_vic, loss_vic_sim, loss_vic_var, loss_vic_cov = vicreg_loss_func(z1, z2) # loss
             # loss = -(log_p2 * weight).mean()
-            cond_reg_loss = torch.clamp(1-torch.sqrt(condition_X.var(dim=1) + self.eps), min=0).mean()
+            std_cond = torch.sqrt(condition_X.var(dim=1) + 1e-4)
+            cond_reg_loss = self.config["lambda_reg"] *  torch.mean(F.relu(1 - std_cond))
             loss_ll = -log_p2.mean()
-            loss = loss_ll + loss_vic + (self.config["lambda_reg"] * cond_reg_loss)
+            loss = loss_ll + loss_vic + cond_reg_loss
 
             self.optimizer.zero_grad()
             self.encoder_optimizer.zero_grad()
@@ -227,6 +228,7 @@ class UncertaintyTrainer:
                 logMsg["loss_vic_sim"] = loss_vic_sim
                 logMsg["loss_vic_var"] = loss_vic_var
                 logMsg["loss_vic_cov"] = loss_vic_cov
+                logMsg["cond_reg_loss"] = cond_reg_loss
                 logMsg["feature_var"] = condition_X.var(dim=1).mean().detach().cpu().item()
                 logMsg["feature_grad"] = condition_X.grad.mean().item()
                 wandb.log(logMsg)
