@@ -608,6 +608,7 @@ class UncertaintyTrainer:
         target_vec = []
         prob_vec = []
         probs_all_vec = []
+        condition_feature_vec = []
 
         for i_batch, x in tqdm(enumerate(loader)):
             # y_one_hot = torch.nn.functional.one_hot(x[1], self.N_classes).to(self.device)
@@ -615,6 +616,7 @@ class UncertaintyTrainer:
             image, target = x[0].to(self.device), x[1].to(self.device)
 
             condition_feature = self.encoder(image)
+            condition_feature_vec.append(condition_feature.data.cpu())
             condition = condition_feature.unsqueeze(2).to(self.device)
             condition = condition.repeat(sample_n, 1, 1)
 
@@ -641,8 +643,9 @@ class UncertaintyTrainer:
         target_vec = torch.cat(target_vec, dim=0)
         approx21_vec = torch.cat(approx21_vec, dim=0)
         probs_all_vec = torch.cat(probs_all_vec, dim=1)
+        condition_feature_vec = torch.cat(condition_feature_vec, dim=0)
 
-        return prob_vec.data.cpu(), target_vec.data.cpu(), approx21_vec.data.cpu() ,probs_all_vec.data.cpu()
+        return prob_vec.data.cpu(), target_vec.data.cpu(), approx21_vec.data.cpu() ,probs_all_vec.data.cpu(), condition_feature_vec.data.cpu()
 
     def sampleImageAcc(self, MC_sample = 1, mean = 0.0, std = 0) -> float:        
         probs, target, _, _ = self.sampling(self.val_loader, MC_sample, mean, std)
