@@ -3,7 +3,7 @@ time_seed: 0
 output_folder: "train_CIFAR10_noise"
 
 image_task: True
-workers: 32
+workers: 0
 
 # 1d: my_1d, wiggle, matern, andrew, agw, 
 # 2d: origin, axis
@@ -21,9 +21,10 @@ var_scale: 3
 # train
 batch: 256
 epochs: 200
-flow_modules: '64-64-64-64-64'
+flow_modules: '32-32-32-32-32'
 cond_size: 512
-lr: 1.0e-2
+lr: 5.0e-3
+encoder_lr: 5.0e-4
 inputDim: 10 # for image N_classes
 add_uniform: False
 uniform_scheduler: False
@@ -31,7 +32,7 @@ uniform_rate: 0.1
 # eval
 sample_count: 256
 eval_data:
-  count: 300
+  count: 256
 
 # cos, ""
 lr_scheduler: "cos"

@@ -3,7 +3,7 @@ time_seed: 0
 output_folder: "train_CIFAR10_noise"
 
 image_task: True
-workers: 32
+workers: 0
 
 # 1d: my_1d, wiggle, matern, andrew, agw, 
 # 2d: origin, axis
@@ -21,7 +21,7 @@ var_scale: 3
 # train
 batch: 256
 epochs: 200
-flow_modules: '32-32-32-32-32'
+flow_modules: '64-64-64-64-64'
 cond_size: 512
 lr: 1.0e-2
 encoder_lr: 1.0e-3
@@ -40,7 +40,7 @@ lr_scheduler: "cos"
 # noise
 algorithm: "flow"
 noise_task: true
-noise_type: 'sym' #sym  0.2 0.5 0.8 #asym  0.2 0.3 0.4
-percent: 0.2
+noise_type: 'none' #sym  0.2 0.5 0.8 #asym  0.2 0.3 0.4
+percent: 0
 co_teaching: false
 loss_ce: false

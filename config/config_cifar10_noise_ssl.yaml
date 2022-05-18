@@ -19,7 +19,7 @@ linear_encode: False
 linear_encode_m : 50
 var_scale: 3
 # train
-batch: 512
+batch: 32
 epochs: 200
 flow_modules: '64-64-64-64-64'
 cond_size: 64
