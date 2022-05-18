@@ -66,7 +66,7 @@ def main(config, device):
 
     #load pre model
     if (config["pretrain_encoder"] != ""):
-        encoder_path = "./result/cifar_noise_fix_encoder_sym05_lr1e2/encoder_90.pt"
+        encoder_path = config["pretrain_encoder"]
         trainer.load_encoder(encoder_path)
     # model_path = "./result/cifar_noise_fix_encoder_sym05_lr1e2/flow_90.pt"
     # trainer.load(model_path)
