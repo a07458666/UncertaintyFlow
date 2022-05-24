@@ -1,19 +1,17 @@
-
-import torch
-from torch import nn, optim
-from torch.utils import data
-
 import os
+import json
 import numpy as np
 import argparse
 import nni
 import matplotlib.pyplot as plt
 
-from trainer import UncertaintyTrainer
+
+import torch
+from torch import nn, optim
+from torch.utils import data
+
 from module.config import checkOutputDirectoryAndCreate, loadConfig, dumpConfig, showConfig
-from module.resnet import MyResNet
-from tqdm import tqdm
-import json
+from trainer import UncertaintyTrainer
 
 try:
     import wandb
@@ -43,21 +41,12 @@ def plot_results(epochs, test_acc, plotfile):
 def get_log_name(path, config):
     # log_name =  config['dataset'] + '_' + config['algorithm'] + '_' + config['noise_type'] + '_' + \
     #             str(config['percent']) + '_seed' + str(config['seed']) + '.json'
-    log_name =  config["output_folder"] + '_' + config['dataset'] + '_' + config['algorithm'] + '_' + config['noise_type'] + '_' + \
-                 str(config['percent']) + '.json'
+    log_name =  config.get("output_folder") + '_' + config.get('dataset') + '_' + config.get('algorithm') + '_' + config.get('noise_type') + '_' + \
+                 str(config.get('percent')) + '.json'
     if os.path.exists('./log') is False:
         os.mkdir('./log')
     log_name = os.path.join('./log', log_name)
     return log_name
-
-def sample_condition(train_loader, encoder):
-    x = []
-    for data in tqdm(train_loader):
-        condition_X_feature = encoder(data[0])
-        x.append(condition_X_feature)
-
-    x = torch.cat(x, dim=0)
-    return x.detach().cpu().numpy()
 
 def main(config, device):
     trainer = UncertaintyTrainer(config, device)
@@ -65,15 +54,15 @@ def main(config, device):
     best_acc, best_epoch = 0.0, 0
 
     #load pre model
-    if (config["pretrain_encoder"] != ""):
-        encoder_path = config["pretrain_encoder"]
+    if (config.get("pretrain_flow", "") != ""):
+        flow_path = config.get("pretrain_flow")
+        trainer.load(flow_path)
+    if (config.get("pretrain_encoder", "") != ""):
+        encoder_path = config.get("pretrain_encoder")
         trainer.load_encoder(encoder_path)
-    # model_path = "./result/cifar_noise_fix_encoder_sym05_lr1e2/flow_90.pt"
-    # trainer.load(model_path)
-    
 
-    for epoch in range(config["epochs"]):
-        if (config["ssl"]):
+    for epoch in range(config.get("epochs", 0)):
+        if (config.get("ssl", False)):
             trainer.trainSSL(epoch)
         else:
             trainer.train(epoch)
@@ -84,7 +73,7 @@ def main(config, device):
             best_acc, best_epoch = test_acc, epoch
 
         print('Epoch [%d/%d] Test Accuracy on the %s test images: %.4f %%' % (
-                epoch + 1, config['epochs'], trainer.num_test_images, test_acc))
+                epoch + 1, config.get('epochs', 0), trainer.num_test_images, test_acc))
         if (wandb != None):
                 logMsg = {}
                 logMsg["epoch"] = epoch
@@ -111,6 +100,11 @@ if __name__ == '__main__':
     parser.add_argument("--output_folder", type=str, default="")
     args = parser.parse_args()
 
+    if (args.gpu != ""):
+        os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+    device = torch.device("cuda" if torch.cuda.is_available() and args.gpu != "-1" else "cpu")
+    print("device : ", device)
+
     # config
     config = loadConfig(args.config)
     if (args.output_folder != ""):
@@ -128,11 +122,6 @@ if __name__ == '__main__':
         wandb.config.update(config)
         wandb.define_metric("loss", summary="min")
         wandb.define_metric("acc", summary="max")
-
-    if (args.gpu != ""):
-        os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
-    device = torch.device("cuda" if torch.cuda.is_available() and args.gpu != "-1" else "cpu")
-    print("device : ", device)
     # main
     main(config, device)
     
