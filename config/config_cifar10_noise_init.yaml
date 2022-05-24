@@ -1,54 +1,34 @@
 # config.yaml
 time_seed: 0
 output_folder: "train_CIFAR10_noise"
-
-image_task: True
 workers: 32
 
-# 1d: my_1d, wiggle, matern, andrew, agw, 
-# 2d: origin, axis
-# image: 'MNIST'    (image_task set True
 #noise "cifar-10"
 dataset: "cifar-10"
 remark: ""
-condition_scale: 1
-position_encode: False
-position_encode_m: 50
-# linear_encode
-linear_encode: False
-linear_encode_m : 50
-var_scale: 3
+
 # train
-batch: 32
+batch: 256
 epochs: 200
 flow_modules: '64-64-64-64-64'
 cond_size: 64
 lr: 1.0e-2
 encoder_lr: 1.0e-3
 inputDim: 10 # for image N_classes
-add_uniform: False
-uniform_scheduler: False
-uniform_rate: 0.1
-# eval
-sample_count: 256
-eval_data:
-  count: 256
 
 # cos, ""
 lr_scheduler: "cos"
 
 # noise
 algorithm: "flow"
-noise_task: true
 noise_type: 'sym' #sym  0.2 0.5 0.8 #asym  0.2 0.3 0.4
 percent: 0.5
-co_teaching: false
-loss_ce: false
 ssl: true
 y_noise_std: 0.2
 lambda_reg: 25.
 
 # encoder
 pretrain_encoder: ""
+pretrain_flow: ""
 fix_encoder: false
 blur: true
