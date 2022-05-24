@@ -95,7 +95,7 @@ class UncertaintyTrainer:
         return
 
     def defOptimizer(self) -> None:
-        self.optimizer = optim.Adam(self.prior.parameters(), lr=self.config["lr"])
+        self.optimizer = optim.AdamW(self.prior.parameters(), lr=self.config["lr"])
         # self.encoder_optimizer = optim.Adam(self.encoder.parameters(), lr=self.config["encoder_lr"])
         self.encoder_optimizer = optim.SGD(self.encoder.parameters(), lr=self.config["encoder_lr"], momentum=0.9, weight_decay=5e-4)
         return
@@ -175,9 +175,10 @@ class UncertaintyTrainer:
 
         pbar = tqdm(self.train_loader)
         for i, x in enumerate(pbar):
-            image, img1, img2, target = x[0].to(self.device), x[1].to(self.device), x[2].to(self.device), x[3].to(self.device), 
+            image, img1, img2, target = x[0].to(self.device), x[1].to(self.device), x[2].to(self.device), x[3].to(self.device)
             # print("x[0] : ", x[0].size())
-            # print("x[1] : ", x[1].size())
+            # print("target : ", target.size())
+            # print("target : ", target)
             # print("self.N_classes : ", self.N_classes)
             input_y_one_hot = torch.nn.functional.one_hot(target, self.N_classes)
             input_y_one_hot = input_y_one_hot.type(torch.cuda.FloatTensor)
@@ -648,7 +649,7 @@ class UncertaintyTrainer:
         return prob_vec.data.cpu(), target_vec.data.cpu(), approx21_vec.data.cpu() ,probs_all_vec.data.cpu(), condition_feature_vec.data.cpu()
 
     def sampleImageAcc(self, MC_sample = 1, mean = 0.0, std = 0) -> float:        
-        probs, target, _, _ = self.sampling(self.val_loader, MC_sample, mean, std)
+        probs, target, _, _, _ = self.sampling(self.val_loader, MC_sample, mean, std)
         acc = accuracy(probs, target, topk=(1,))[0].cpu().item()
         print("acc : ", acc)
         return acc
