@@ -34,6 +34,7 @@ class NoiseDataset(torchvision.datasets.VisionDataset):
         self.num_classes = len(np.unique(self.targets))
         assert self.num_classes == self.max_target - self.min_target + 1
         self.num_samples = len(self.targets)
+        self.label_is_correct = np.ones(self.num_samples)
         
         # fix gpu device
         self.device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -49,7 +50,10 @@ class NoiseDataset(torchvision.datasets.VisionDataset):
         indices = np.random.permutation(len(self.data))
         for i, idx in enumerate(indices):
             if i < self.percent * len(self.data):
-                self.targets[idx] = np.random.randint(low=self.min_target, high=self.max_target + 1, dtype=np.int32)
+                new_label = np.random.randint(low=self.min_target, high=self.max_target + 1, dtype=np.int32)
+                if self.targets[idx] != new_label:
+                    self.targets[idx] = new_label
+                    self.label_is_correct[idx] = 0
 
     def asymmetric_noise(self):
         target_copy = self.targets.copy()
@@ -60,6 +64,7 @@ class NoiseDataset(torchvision.datasets.VisionDataset):
             target_copy = np.array(target_copy)
             target_copy[idx] = (target_copy[idx] + 1) % (self.max_target + 1) + self.min_target
             self.targets = target_copy
+            self.label_is_correct[idx] = 0
         else:
             for i in self.asym_trans.keys():
                 indices = list(np.where(np.array(target_copy) == i)[0])
@@ -67,6 +72,7 @@ class NoiseDataset(torchvision.datasets.VisionDataset):
                 for j, idx in enumerate(indices):
                     if j <= self.percent * len(indices):
                         self.targets[idx] = (self.asym_trans[i] if i in self.asym_trans.keys() else i)
+                        self.label_is_correct[idx] = 0
         del target_copy
 
     def instance_noise(
@@ -126,10 +132,10 @@ class NoiseDataset(torchvision.datasets.VisionDataset):
         P = torch.stack(P, 0).cpu().numpy()
         l = [i for i in range(self.min_target, self.max_target + 1)]
         new_label = [np.random.choice(l, p=P[i]) for i in range(num_samples)]
-
+        self.label_is_correct = (new_label == np.array(self.targets))
         print('noise rate = ', (new_label != np.array(self.targets)).mean())
         self.targets = new_label
-
+        
 
 class NoiseCIFAR10(CIFAR10, NoiseDataset):
     def __init__(
@@ -183,19 +189,20 @@ class NoiseCIFAR10(CIFAR10, NoiseDataset):
 
     def __getitem__(self, index):
         image, target = self.data[index], self.targets[index]
+        correct = self.label_is_correct[index]
         image = Image.fromarray(image)
 
         if self.mode=='train_single':
             img = self.transform_train_weak(image)
-            return img, target  
+            return img, target, correct
         elif self.mode=='train': 
             raw = self.transform_train_weak(image)
             img1 = self.transform_train_strong(image)
             img2 = self.transform_train_strong(image)   
-            return raw, img1, img2, target
+            return raw, img1, img2, target, correct
         elif self.mode=='test': 
             img = self.transform_test(image) 
-            return img, target
+            return img, target, correct
 
 
 class NoiseCIFAR100(CIFAR100, NoiseDataset):
