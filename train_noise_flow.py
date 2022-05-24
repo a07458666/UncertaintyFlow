@@ -39,8 +39,6 @@ def plot_results(epochs, test_acc, plotfile):
     plt.savefig(plotfile)
 
 def get_log_name(path, config):
-    # log_name =  config['dataset'] + '_' + config['algorithm'] + '_' + config['noise_type'] + '_' + \
-    #             str(config['percent']) + '_seed' + str(config['seed']) + '.json'
     log_name =  config.get("output_folder") + '_' + config.get('dataset') + '_' + config.get('algorithm') + '_' + config.get('noise_type') + '_' + \
                  str(config.get('percent')) + '.json'
     if os.path.exists('./log') is False:
@@ -50,6 +48,7 @@ def get_log_name(path, config):
 
 def main(config, device):
     trainer = UncertaintyTrainer(config, device)
+
     acc_list, acc_all_list = [], []
     best_acc, best_epoch = 0.0, 0
 

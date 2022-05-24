@@ -20,8 +20,6 @@ def main(config, device, model_path, encoder_path):
         trainer = UncertaintyTrainer(config, device)
         csv_path = "./" + config["output_folder"] + ".csv"
         trainer.setDataFrame(csv_path)
-        # trainer.loadValImageDataset()
-        trainer.loadNoiseDataset()
         for epoch in range(config["epochs"]):
             model_path = f'result/{config["output_folder"]}/flow_{str(epoch).zfill(2)}.pt'
             encoder_path = f'result/{config["output_folder"]}/encoder_{str(epoch).zfill(2)}.pt'

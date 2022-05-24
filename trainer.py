@@ -26,17 +26,20 @@ except ImportError:
 
 class UncertaintyTrainer:
     def __init__(self, config, device) -> None:
+        self.eps = 1e-40
         self.config = config
         self.device = device
-        torch.manual_seed(self.config["time_seed"])
+
+        np.random.seed(int(self.config["time_seed"]))
+        torch.manual_seed(int(self.config["time_seed"]))
+        torch.cuda.manual_seed(int(self.config["time_seed"]))
+
         self.batch_size = self.config["batch"]
         self.cond_size = self.config["cond_size"]
-        self.eps = 1e-40
         self.loadNoiseDataset()
         self.creatModel()
         self.defOptimizer()
-        self.model_scheduler = CosineAnnealingLR(self.optimizer, T_max=self.config["epochs"])
-        self.encoder_scheduler = CosineAnnealingLR(self.encoder_optimizer, T_max=self.config["epochs"])
+        self.defScheduler()
         return
 
     def loadNoiseDataset(self) -> None:
@@ -66,6 +69,10 @@ class UncertaintyTrainer:
         self.encoder_optimizer = optim.SGD(self.encoder.parameters(), lr=self.config["encoder_lr"], momentum=0.9, weight_decay=5e-4)
         return
 
+    def defScheduler(self):
+        self.model_scheduler = CosineAnnealingLR(self.optimizer, T_max=self.config["epochs"])
+        self.encoder_scheduler = CosineAnnealingLR(self.encoder_optimizer, T_max=self.config["epochs"])
+        return 
 
     def train(self, epoch) -> list:
         self.prior.train()
@@ -203,8 +210,7 @@ class UncertaintyTrainer:
         self.model_scheduler.step()
         self.encoder_scheduler.step()
         self.save(f'result/{self.config["output_folder"]}/flow_{str(epoch).zfill(2)}.pt')
-        if self.config["image_task"]:
-            self.save_encoder(f'result/{self.config["output_folder"]}/encoder_{str(epoch).zfill(2)}.pt')
+        self.save_encoder(f'result/{self.config["output_folder"]}/encoder_{str(epoch).zfill(2)}.pt')
 
         return acclist
 
@@ -229,7 +235,8 @@ class UncertaintyTrainer:
         probs_all_vec = []
         condition_feature_vec = []
 
-        for i_batch, x in tqdm(enumerate(loader)):
+        pbar = tqdm(enumerate(self.loader))
+        for i_batch, x in pbar:
             # y_one_hot = torch.nn.functional.one_hot(x[1], self.N_classes).to(self.device)
             
             image, target = x[0].to(self.device), x[1].to(self.device)
