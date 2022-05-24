@@ -17,9 +17,6 @@ except ImportError:
 def main(config, device, model_path, encoder_path):
     acc_all_list = []
     with torch.no_grad():
-        # config['dataset'] = "cifar-10"
-        # config['noise_type'] = "sym"
-        # config["percent"]= 0
         trainer = UncertaintyTrainer(config, device)
         csv_path = "./" + config["output_folder"] + ".csv"
         trainer.setDataFrame(csv_path)
@@ -44,14 +41,15 @@ if __name__ == '__main__':
     parser.add_argument("--config", type=str, default="")
     args = parser.parse_args()
 
+    if (args.gpu != ""):
+        os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+
     # config
     if (args.config == ""):
         args.config = os.path.dirname(args.modelPath) + "/config.yaml"
     config = loadConfig(args.config)
     showConfig(config)
 
-    # if (args.gpu != ""):
-    #     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     device = torch.device("cuda" if torch.cuda.is_available() and args.gpu != "-1" else "cpu")
     # main
     main(config, device, args.modelPath, args.encoderPath)
