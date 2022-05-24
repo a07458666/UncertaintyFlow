@@ -5,7 +5,7 @@ from torch import Tensor
 
 class MyResNet(nn.Module):
 
-    def __init__(self, in_channels=1, out_features = 512):
+    def __init__(self, in_channels=1, out_features = 512, isPredictor = True):
         super(MyResNet, self).__init__()
 
         # bring resnet
@@ -14,11 +14,11 @@ class MyResNet(nn.Module):
         # self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.model.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, stride=1, padding=1, bias=False)
         self.model.fc = nn.Linear(in_features=512, out_features=out_features, bias=True)
-
-        self.model.predictor = nn.Sequential(nn.Linear(out_features, out_features, bias=False),
-                                        nn.BatchNorm1d(out_features),
-                                        nn.ReLU(inplace=True), # hidden layer
-                                        nn.Linear(out_features, out_features)) # output layer
+        if (isPredictor):
+            self.model.predictor = nn.Sequential(nn.Linear(out_features, out_features, bias=False),
+                                            nn.BatchNorm1d(out_features),
+                                            nn.ReLU(inplace=True), # hidden layer
+                                            nn.Linear(out_features, out_features)) # output layer
         
 
     def forward(self, x):
