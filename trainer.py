@@ -235,7 +235,7 @@ class UncertaintyTrainer:
         probs_all_vec = []
         condition_feature_vec = []
 
-        pbar = tqdm(enumerate(self.loader))
+        pbar = tqdm(enumerate(loader))
         for i_batch, x in pbar:
             # y_one_hot = torch.nn.functional.one_hot(x[1], self.N_classes).to(self.device)
             
@@ -276,5 +276,4 @@ class UncertaintyTrainer:
     def sampleImageAcc(self, MC_sample = 1, mean = 0.0, std = 0) -> float:        
         probs, target, _, _, _ = self.sampling(self.val_loader, MC_sample, mean, std)
         acc = accuracy(probs, target, topk=(1,))[0].cpu().item()
-        print("acc : ", acc)
         return acc
