@@ -11,7 +11,7 @@ from .cifar import CIFAR10, CIFAR100
 import torchvision.transforms as transforms
 from torch.utils.data import Dataset, DataLoader
 
-device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+# device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
 class NoiseDataset(torchvision.datasets.VisionDataset):
     def __init__(
@@ -35,6 +35,9 @@ class NoiseDataset(torchvision.datasets.VisionDataset):
         assert self.num_classes == self.max_target - self.min_target + 1
         self.num_samples = len(self.targets)
         
+        # fix gpu device
+        self.device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+
         if self.noise_type == 'sym':
             self.symmetric_noise()
         elif self.noise_type == 'asym':
@@ -106,10 +109,10 @@ class NoiseDataset(torchvision.datasets.VisionDataset):
         # how many random variates you need to get
         q = flip_distribution.rvs(num_samples)
         # sample W \in \mathcal{R}^{S \times K} from the standard normal distribution N(0, 1^2)
-        W = torch.tensor(np.random.randn(num_classes, feature_size, num_classes)).float().to(device)
+        W = torch.tensor(np.random.randn(num_classes, feature_size, num_classes)).float().to(self.device)
         for i in range(num_samples):
             x, y = self.transform(Image.fromarray(self.data[i])), torch.tensor(self.targets[i])
-            x = x.to(device)
+            x = x.to(self.device)
             # step (4). generate instance-dependent flip rates
             # 1 x feature_size  *  feature_size x 10 = 1 x 10, p is a 1 x 10 vector
             p = x.reshape(1, -1).mm(W[y]).squeeze(0)
