@@ -18,6 +18,7 @@ from module.noise_datasets.noise_datasets import cifar_dataloader
 
 from module.losses.vicreg import vicreg_loss_func
 from module.auto_drop import auto_drop
+from module.mixup import mixup_data, mixup_criterion
 
 try:
     import wandb
@@ -150,12 +151,20 @@ class UncertaintyTrainer:
         for i, x in enumerate(pbar):
             logMsg = {}
             image, img1, img2, target, correct = x[0].to(self.device), x[1].to(self.device), x[2].to(self.device), x[3].to(self.device), x[4].to(self.device)
+
             # print("x[0] : ", x[0].size())
             # print("target : ", target.size())
             # print("target : ", target)
             # print("self.N_classes : ", self.N_classes)
             input_y_one_hot = torch.nn.functional.one_hot(target, self.N_classes)
             input_y_one_hot = input_y_one_hot.type(torch.cuda.FloatTensor)
+
+            # image to mixup image
+            if self.config.get("mixup", False):
+                mixed_x, y_a, y_b, lam, mixed_y = mixup_data(image, input_y_one_hot)
+                image = mixed_x
+                input_y_one_hot = mixed_y
+
             input_y = input_y_one_hot.unsqueeze(1).to(self.device)
             if (self.config["blur"]):
                 y_noise_std = self.config["y_noise_std"] * math.cos((math.pi / 2) * (epoch / self.config["epochs"]))
