@@ -32,3 +32,6 @@ pretrain_encoder: ""
 pretrain_flow: ""
 fix_encoder: false
 blur: true
+
+# auto_drop
+auto_drop: true

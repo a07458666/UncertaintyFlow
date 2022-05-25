@@ -17,6 +17,7 @@ from module.resnet import MyResNet
 from module.noise_datasets.noise_datasets import cifar_dataloader
 
 from module.losses.vicreg import vicreg_loss_func
+from module.auto_drop import auto_drop
 
 try:
     import wandb
@@ -94,7 +95,7 @@ class UncertaintyTrainer:
             condition_X_feature = self.encoder(image)
             condition_X = condition_X_feature.unsqueeze(2).to(self.device)
             # weight = self.getWeightByEntropy(input_y, condition_X)
-            delta_p = torch.zeros(input_y.shape[0], input_y.shape[1], 1).to(input_y)
+            delta_p = torch.zeros(input_y.shape[0], input_y.shape[1], 1).to(self.device)
             # print("input_y : ", input_y.size())
             # print("condition_X : ", condition_X.size())
             # print("delta_p: ", delta_p.size())
@@ -147,7 +148,8 @@ class UncertaintyTrainer:
 
         pbar = tqdm(self.train_loader)
         for i, x in enumerate(pbar):
-            image, img1, img2, target = x[0].to(self.device), x[1].to(self.device), x[2].to(self.device), x[3].to(self.device)
+            logMsg = {}
+            image, img1, img2, target, correct = x[0].to(self.device), x[1].to(self.device), x[2].to(self.device), x[3].to(self.device), x[4].to(self.device)
             # print("x[0] : ", x[0].size())
             # print("target : ", target.size())
             # print("target : ", target)
@@ -162,7 +164,7 @@ class UncertaintyTrainer:
             condition_X_feature = self.encoder(image)
             _, _, z1, z2 = self.encoder.forward_ssl(img1, img2)
             condition_X = condition_X_feature.unsqueeze(2).to(self.device)
-            delta_p = torch.zeros(input_y.shape[0], input_y.shape[1], 1).to(input_y)
+            delta_p = torch.zeros(input_y.shape[0], input_y.shape[1], 1).to(self.device)
             # print("input_y : ", input_y.size())
             # print("condition_X : ", condition_X.size())
             # print("delta_p: ", delta_p.size())
@@ -173,13 +175,27 @@ class UncertaintyTrainer:
             delta_log_p2 = delta_log_p2.view(input_y.size()[0], input_y.shape[1], 1).sum(1)
             log_p2 = (approx2 - delta_log_p2)
 
+            if self.config.get("auto_drop", False):
+                drop_mask, drop_precision, drop_recall, drop_acc = auto_drop(log_p2.detach().cpu(), self.batch_size, correct)
+                logMsg["drop_precision"] = drop_precision
+                logMsg["drop_recall"] = drop_recall
+                logMsg["drop_acc"] = drop_acc
+
+            # ssl loss
             loss_vic, loss_vic_sim, loss_vic_var, loss_vic_cov = vicreg_loss_func(z1, z2) # loss
-            # loss = -(log_p2 * weight).mean()
+            
+            # reg loss
             std_cond = torch.sqrt(condition_X.var(dim=1) + 1e-4)
             cond_reg_loss = self.config["lambda_reg"] *  torch.mean(F.relu(1 - std_cond))
-            loss_ll = -log_p2.mean()
-            loss = loss_ll + loss_vic + cond_reg_loss
 
+            # flow nll loss
+            if self.config.get("auto_drop", False):
+                loss_ll =  -(log_p2 * (1-drop_mask.to(self.device))).mean()
+            else:
+                loss_ll = -log_p2.mean()
+
+            loss = loss_ll + loss_vic + cond_reg_loss
+            
             self.optimizer.zero_grad()
             self.encoder_optimizer.zero_grad()
             condition_X.retain_grad()
@@ -191,18 +207,17 @@ class UncertaintyTrainer:
                 f'epoch: {epoch}, logP: {loss:.5f}')
             loss_list.append(loss.item())
 
+            logMsg["epoch"] = epoch
+            logMsg["loss"] = loss
+            logMsg["loss_ll"] = loss
+            logMsg["loss_vic"] = loss_vic
+            logMsg["loss_vic_sim"] = loss_vic_sim
+            logMsg["loss_vic_var"] = loss_vic_var
+            logMsg["loss_vic_cov"] = loss_vic_cov
+            logMsg["cond_reg_loss"] = cond_reg_loss
+            logMsg["feature_var"] = condition_X.var(dim=1).mean().detach().cpu().item()
+            logMsg["feature_grad"] = condition_X.grad.mean().item()
             if (wandb != None):
-                logMsg = {}
-                logMsg["epoch"] = epoch
-                logMsg["loss"] = loss
-                logMsg["loss_ll"] = loss
-                logMsg["loss_vic"] = loss_vic
-                logMsg["loss_vic_sim"] = loss_vic_sim
-                logMsg["loss_vic_var"] = loss_vic_var
-                logMsg["loss_vic_cov"] = loss_vic_cov
-                logMsg["cond_reg_loss"] = cond_reg_loss
-                logMsg["feature_var"] = condition_X.var(dim=1).mean().detach().cpu().item()
-                logMsg["feature_grad"] = condition_X.grad.mean().item()
                 wandb.log(logMsg)
                 wandb.watch(self.prior,log = "all", log_graph=True)
         
@@ -236,9 +251,7 @@ class UncertaintyTrainer:
         condition_feature_vec = []
 
         pbar = tqdm(enumerate(loader))
-        for i_batch, x in pbar:
-            # y_one_hot = torch.nn.functional.one_hot(x[1], self.N_classes).to(self.device)
-            
+        for i_batch, x in pbar:            
             image, target = x[0].to(self.device), x[1].to(self.device)
 
             condition_feature = self.encoder(image)
@@ -247,7 +260,7 @@ class UncertaintyTrainer:
             condition = condition.repeat(sample_n, 1, 1)
 
             input_z = torch.normal(mean = mean, std = std, size=(sample_n * self.config["batch"] , self.N_classes)).unsqueeze(1).to(self.device)
-            delta_p = torch.zeros(input_z.shape[0], input_z.shape[1], 1).to(input_z)
+            delta_p = torch.zeros(input_z.shape[0], input_z.shape[1], 1).to(self.device)
 
             approx21, _ = self.prior(input_z, condition, delta_p, reverse=True)
 
