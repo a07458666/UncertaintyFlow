@@ -121,6 +121,14 @@ if __name__ == '__main__':
         wandb.config.update(config)
         wandb.define_metric("loss", summary="min")
         wandb.define_metric("acc", summary="max")
+        wandb.define_metric("test_acc", summary="max")
+        wandb.define_metric("loss_vic_cov", summary="min")
+        wandb.define_metric("loss_vic_sim", summary="min")
+        wandb.define_metric("loss_vic_var", summary="min")
+        wandb.define_metric("drop_acc", summary="max")
+        wandb.define_metric("drop_precision", summary="max")
+        wandb.define_metric("drop_recall", summary="max")
+        
     # main
     main(config, device)
     
