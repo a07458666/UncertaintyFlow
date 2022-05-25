@@ -28,4 +28,4 @@ def auto_drop(log_p2, batch_size, correct):
     # drop sample has only 10% loss
     drop_mask = drop_mask * 0.9
 
-    return drop_mask, drop_precision, drop_recall, drop_acc
+    return drop_mask, drop_precision, drop_recall, drop_acc, drop_rate

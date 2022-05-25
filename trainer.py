@@ -167,8 +167,8 @@ class UncertaintyTrainer:
 
             input_y = input_y_one_hot.unsqueeze(1).to(self.device)
             if (self.config["blur"]):
-                y_noise_std = self.config["y_noise_std"] * math.cos((math.pi / 2) * (epoch / self.config["epochs"]))
-                input_y += torch.normal(mean=0, std=y_noise_std, size=input_y.size()).to(self.device)
+                # y_noise_std = self.config["y_noise_std"] * math.cos((math.pi / 2) * (epoch / self.config["epochs"]))
+                input_y += torch.normal(mean=0, std=self.config["y_noise_std"], size=input_y.size()).to(self.device)
             
             condition_X_feature = self.encoder(image)
             _, _, z1, z2 = self.encoder.forward_ssl(img1, img2)
@@ -185,16 +185,18 @@ class UncertaintyTrainer:
             log_p2 = (approx2 - delta_log_p2)
 
             if self.config.get("auto_drop", False):
-                drop_mask, drop_precision, drop_recall, drop_acc = auto_drop(log_p2.detach().cpu(), self.batch_size, correct)
+                drop_mask, drop_precision, drop_recall, drop_acc, drop_rate = auto_drop(log_p2.detach().cpu(), self.batch_size, correct)
                 logMsg["drop_precision"] = drop_precision
                 logMsg["drop_recall"] = drop_recall
                 logMsg["drop_acc"] = drop_acc
+                logMsg["drop_rate"] = drop_rate
+
 
             # ssl loss
             loss_vic, loss_vic_sim, loss_vic_var, loss_vic_cov = vicreg_loss_func(z1, z2) # loss
             
             # reg loss
-            std_cond = torch.sqrt(condition_X.var(dim=1) + 1e-4)
+            std_cond = torch.sqrt(condition_X.var(dim=1) + 1e-10)
             cond_reg_loss = self.config["lambda_reg"] *  torch.mean(F.relu(1 - std_cond))
 
             # flow nll loss

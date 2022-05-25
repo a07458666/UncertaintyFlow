@@ -8,10 +8,10 @@ dataset: "cifar-10"
 remark: ""
 
 # train
-batch: 256
+batch: 512
 epochs: 200
-flow_modules: '64-64-64-64-64'
-cond_size: 64
+flow_modules: '128-128-128-128-128'
+cond_size: 256
 lr: 1.0e-2
 encoder_lr: 1.0e-3
 inputDim: 10 # for image N_classes
@@ -22,9 +22,9 @@ lr_scheduler: "cos"
 # noise
 algorithm: "flow"
 noise_type: 'sym' #sym  0.2 0.5 0.8 #asym  0.2 0.3 0.4
-percent: 0.2
+percent: 0.5
 ssl: true
-y_noise_std: 0.2
+y_noise_std: 0.3
 lambda_reg: 25.
 
 # encoder

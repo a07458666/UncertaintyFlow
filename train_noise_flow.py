@@ -67,6 +67,8 @@ def main(config, device):
             trainer.train(epoch)
         # evaluate 
         test_acc = trainer.sampleImageAcc()
+        test_acc02 = trainer.sampleImageAcc(10, 0, 0.2)
+        test_acc10 = trainer.sampleImageAcc(10, 0, 1)
         nni.report_intermediate_result(test_acc)
         if best_acc < test_acc:
             best_acc, best_epoch = test_acc, epoch
@@ -77,6 +79,8 @@ def main(config, device):
                 logMsg = {}
                 logMsg["epoch"] = epoch
                 logMsg["test_acc"] = test_acc
+                logMsg["test_acc0.2"] = test_acc02
+                logMsg["test_acc1.0"] = test_acc10
                 wandb.log(logMsg)
 
         if epoch >= config['epochs'] - 10:
@@ -126,6 +130,8 @@ if __name__ == '__main__':
         wandb.define_metric("loss_vic_sim", summary="min")
         wandb.define_metric("loss_vic_var", summary="min")
         wandb.define_metric("drop_acc", summary="max")
+        wandb.define_metric("drop_acc1.0", summary="max")
+        wandb.define_metric("drop_acc0.2", summary="max")
         wandb.define_metric("drop_precision", summary="max")
         wandb.define_metric("drop_recall", summary="max")
         
