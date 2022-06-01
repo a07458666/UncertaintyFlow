@@ -20,6 +20,6 @@ def mixup_data(x, y, alpha=1.0):
     return mixed_x, y_a, y_b, lam, mixed_y
 
 
-def mixup_criterion(criterion, pred, y_a, y_b, lam):
+def mixup_criterion(pred, y_a, y_b, lam = 0.5):
     criterion = nn.CrossEntropyLoss()
     return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)

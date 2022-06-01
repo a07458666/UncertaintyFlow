@@ -1,0 +1,24 @@
+# config.yaml
+time_seed: 0
+output_folder: "train_CIFAR10_noise"
+workers: 32
+
+# "ce(CrossEntropy), vic, mixup, vic_mixup, auto_drop"
+lossType: "auto_drop" 
+
+#noise "cifar-10"
+dataset: "cifar-10"
+remark: ""
+
+# train
+batch: 256
+epochs: 200
+cond_size: 512
+lr: 1.0e-3
+
+# cos, ""
+lr_scheduler: "cos"
+
+# noise
+noise_type: 'sym' #sym  0.2 0.5 0.8 #asym  0.2 0.3 0.4
+percent: 0.5

@@ -12,7 +12,7 @@ batch: 256
 epochs: 200
 flow_modules: '64-64-64-64-64'
 cond_size: 64
-lr: 1.0e-2
+lr: 1.0e-3
 encoder_lr: 1.0e-3
 inputDim: 10 # for image N_classes
 
@@ -22,19 +22,17 @@ lr_scheduler: "cos"
 # noise
 algorithm: "flow"
 noise_type: 'sym' #sym  0.2 0.5 0.8 #asym  0.2 0.3 0.4
-percent: 0.2
+percent: 0.5
 ssl: true
-y_noise_std: 0.2
-lambda_reg: 25.
 
 # encoder
 pretrain_encoder: ""
 pretrain_flow: ""
 fix_encoder: false
-blur: true
-
-# auto_drop
-auto_drop: false
+blur: false
 
 # mixup
 mixup: true
+
+# pseudo label
+# pseudo_label: true
