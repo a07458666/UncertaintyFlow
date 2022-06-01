@@ -35,7 +35,8 @@ class NoiseDataset(torchvision.datasets.VisionDataset):
         assert self.num_classes == self.max_target - self.min_target + 1
         self.num_samples = len(self.targets)
         self.label_is_correct = np.ones(self.num_samples)
-        
+        self.target_backup = self.targets.copy()
+
         # fix gpu device
         self.device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
@@ -93,7 +94,7 @@ class NoiseDataset(torchvision.datasets.VisionDataset):
         # np.random.seed(int(seed))
         # torch.manual_seed(int(seed))
         # torch.cuda.manual_seed(int(seed))
-                
+
         # common-used parameters
         num_samples = self.num_samples
         num_classes = self.num_classes
@@ -190,19 +191,20 @@ class NoiseCIFAR10(CIFAR10, NoiseDataset):
     def __getitem__(self, index):
         image, target = self.data[index], self.targets[index]
         correct = self.label_is_correct[index]
+        real_target = self.target_backup[index]
         image = Image.fromarray(image)
 
         if self.mode=='train_single':
             img = self.transform_train_weak(image)
-            return img, target, correct
+            return img, target, correct, real_target
         elif self.mode=='train': 
             raw = self.transform_train_weak(image)
             img1 = self.transform_train_strong(image)
             img2 = self.transform_train_strong(image)   
-            return raw, img1, img2, target, correct
+            return raw, img1, img2, target, correct, real_target
         elif self.mode=='test': 
             img = self.transform_test(image) 
-            return img, target, correct
+            return img, target
 
 
 class NoiseCIFAR100(CIFAR100, NoiseDataset):
@@ -250,16 +252,18 @@ class NoiseCIFAR100(CIFAR100, NoiseDataset):
 
     def __getitem__(self, index):
         image, target = self.data[index], self.targets[index]
+        correct = self.label_is_correct[index]
+        real_target = self.target_backup[index]
         image = Image.fromarray(image)
 
         if self.mode=='train_single':
             img = self.transform_train_weak(image)
-            return img, target  
+            return img, target, correct, real_target
         elif self.mode=='train': 
             raw = self.transform_train_weak(image)
             img1 = self.transform_train_strong(image)
             img2 = self.transform_train_strong(image)
-            return raw, img1, img2, target
+            return raw, img1, img2, target, correct, real_target
         elif self.mode=='test': 
             img = self.transform_test(image) 
             return img, target

@@ -78,9 +78,9 @@ def main(config, device):
         if (wandb != None):
                 logMsg = {}
                 logMsg["epoch"] = epoch
-                logMsg["test_acc"] = test_acc
-                logMsg["test_acc0.2"] = test_acc02
-                logMsg["test_acc1.0"] = test_acc10
+                logMsg["acc/val"] = test_acc
+                logMsg["acc/val_0.2"] = test_acc02
+                logMsg["acc/val_1.0"] = test_acc10
                 wandb.log(logMsg)
 
         if epoch >= config['epochs'] - 10:
