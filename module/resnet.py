@@ -5,7 +5,7 @@ from torch import Tensor
 
 class MyResNet(nn.Module):
 
-    def __init__(self, in_channels=1, out_features = 512, isPredictor = True):
+    def __init__(self, in_channels=1, feature_dim = 512, isPredictor = True, isLinear = False, num_classes = 10):
         super(MyResNet, self).__init__()
 
         # bring resnet
@@ -13,12 +13,14 @@ class MyResNet(nn.Module):
         # original definition of the first layer on the renset class
         # self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.model.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, stride=1, padding=1, bias=False)
-        self.model.fc = nn.Linear(in_features=512, out_features=out_features, bias=True)
+        self.model.fc = nn.Linear(in_features=512, out_features=feature_dim, bias=True)
         if (isPredictor):
-            self.model.predictor = nn.Sequential(nn.Linear(out_features, out_features, bias=False),
-                                            nn.BatchNorm1d(out_features),
+            self.model.predictor = nn.Sequential(nn.Linear(512, 512, bias=False),
+                                            nn.BatchNorm1d(512),
                                             nn.ReLU(inplace=True), # hidden layer
-                                            nn.Linear(out_features, out_features)) # output layer
+                                            nn.Linear(512, feature_dim)) # output layer
+        if isLinear:
+            self.model.fc = nn.Linear(in_features=512, out_features=num_classes)
         
 
     def forward(self, x):
@@ -56,8 +58,8 @@ class MyResNet(nn.Module):
         return x
 
     def forward_ssl(self, x1: Tensor, x2: Tensor) -> Tensor:
-        p1 = self.forward(x1)
-        p2 = self.forward(x2)
+        p1 = self.forward_flatten(x1)
+        p2 = self.forward_flatten(x2)
         z1 = self.model.predictor(p1)
         z2 = self.model.predictor(p2)
 
