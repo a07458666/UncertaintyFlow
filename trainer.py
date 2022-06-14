@@ -60,15 +60,16 @@ class UncertaintyTrainer:
 
     def creatModel(self) -> None:
         self.prior = cnf(self.config["inputDim"], self.config["flow_modules"], self.cond_size, 1).to(self.device)
-        self.encoder = MyResNet(in_channels = self.input_channels, out_features = self.cond_size).to(self.device)
+        self.encoder = MyResNet(in_channels = self.input_channels, feature_dim = self.cond_size).to(self.device)
+        
         if (self.config.get("fix_encoder", False)):
             set_parameter_requires_grad(self.encoder)
         return
 
     def defOptimizer(self) -> None:
         self.optimizer = optim.AdamW(self.prior.parameters(), lr=self.config["lr"])
-        # self.encoder_optimizer = optim.Adam(self.encoder.parameters(), lr=self.config["encoder_lr"])
-        self.encoder_optimizer = optim.SGD(self.encoder.parameters(), lr=self.config["encoder_lr"], momentum=0.9, weight_decay=5e-4)
+        self.encoder_optimizer = optim.AdamW(self.encoder.parameters(), lr=self.config["encoder_lr"])
+        # self.encoder_optimizer = optim.SGD(self.encoder.parameters(), lr=self.config["encoder_lr"], momentum=0.9, weight_decay=5e-4)
         return
 
     def defScheduler(self):
@@ -146,11 +147,14 @@ class UncertaintyTrainer:
         self.encoder.train()
         acclist = []
         loss_list = []
-
+        acc = 0
+        acc_noise = 0
+        acc_clean = 0
         pbar = tqdm(self.train_loader)
         for i, x in enumerate(pbar):
             logMsg = {}
-            image, img1, img2, target, correct = x[0].to(self.device), x[1].to(self.device), x[2].to(self.device), x[3].to(self.device), x[4].to(self.device)
+            image, img1, img2 = x[0].to(self.device), x[1].to(self.device), x[2].to(self.device)
+            target, correct, target_real = x[3].to(self.device), x[4].to(self.device), x[5].to(self.device)
 
             # print("x[0] : ", x[0].size())
             # print("target : ", target.size())
@@ -166,9 +170,9 @@ class UncertaintyTrainer:
                 input_y_one_hot = mixed_y
 
             input_y = input_y_one_hot.unsqueeze(1).to(self.device)
-            if (self.config["blur"]):
+            # if (self.config["blur"]):
                 # y_noise_std = self.config["y_noise_std"] * math.cos((math.pi / 2) * (epoch / self.config["epochs"]))
-                input_y += torch.normal(mean=0, std=self.config["y_noise_std"], size=input_y.size()).to(self.device)
+                # input_y += torch.normal(mean=0, std=self.config["y_noise_std"], size=input_y.size()).to(self.device)
             
             condition_X_feature = self.encoder(image)
             _, _, z1, z2 = self.encoder.forward_ssl(img1, img2)
@@ -184,28 +188,12 @@ class UncertaintyTrainer:
             delta_log_p2 = delta_log_p2.view(input_y.size()[0], input_y.shape[1], 1).sum(1)
             log_p2 = (approx2 - delta_log_p2)
 
-            if self.config.get("auto_drop", False):
-                drop_mask, drop_precision, drop_recall, drop_acc, drop_rate = auto_drop(log_p2.detach().cpu(), self.batch_size, correct)
-                logMsg["drop_precision"] = drop_precision
-                logMsg["drop_recall"] = drop_recall
-                logMsg["drop_acc"] = drop_acc
-                logMsg["drop_rate"] = drop_rate
-
-
             # ssl loss
             loss_vic, loss_vic_sim, loss_vic_var, loss_vic_cov = vicreg_loss_func(z1, z2) # loss
-            
-            # reg loss
-            std_cond = torch.sqrt(condition_X.var(dim=1) + 1e-10)
-            cond_reg_loss = self.config["lambda_reg"] *  torch.mean(F.relu(1 - std_cond))
 
-            # flow nll loss
-            if self.config.get("auto_drop", False):
-                loss_ll =  -(log_p2 * (1-drop_mask.to(self.device))).mean()
-            else:
-                loss_ll = -log_p2.mean()
+            loss_ll = -log_p2.mean()
 
-            loss = loss_ll + loss_vic + cond_reg_loss
+            loss = loss_ll + loss_vic
             
             self.optimizer.zero_grad()
             self.encoder_optimizer.zero_grad()
@@ -214,24 +202,32 @@ class UncertaintyTrainer:
             self.optimizer.step()
             self.encoder_optimizer.step()
 
+            
+            acc_batch, acc_noise_batch, acc_clean_batch = self.getTrainAcc(condition_X, target_real, correct)
+            acc += acc_batch
+            acc_noise += acc_noise_batch
+            acc_clean += acc_clean_batch
+
             pbar.set_description(
                 f'epoch: {epoch}, logP: {loss:.5f}')
             loss_list.append(loss.item())
 
             logMsg["epoch"] = epoch
-            logMsg["loss"] = loss
-            logMsg["loss_ll"] = loss
-            logMsg["loss_vic"] = loss_vic
-            logMsg["loss_vic_sim"] = loss_vic_sim
-            logMsg["loss_vic_var"] = loss_vic_var
-            logMsg["loss_vic_cov"] = loss_vic_cov
-            logMsg["cond_reg_loss"] = cond_reg_loss
-            logMsg["feature_var"] = condition_X.var(dim=1).mean().detach().cpu().item()
-            logMsg["feature_grad"] = condition_X.grad.mean().item()
+            logMsg["loss/loss"] = loss
+            logMsg["loss/ll"] = loss
+            logMsg["loss/vic"] = loss_vic
+            logMsg["loss/vic_sim"] = loss_vic_sim
+            logMsg["loss/vic_var"] = loss_vic_var
+            logMsg["loss/vic_cov"] = loss_vic_cov
+            logMsg["feature/var"] = condition_X.var(dim=1).mean().detach().cpu().item()
+            logMsg["feature/grad"] = condition_X.grad.mean().item()
+            logMsg["acc/train"] = acc / (i + 1)
+            logMsg["acc/train_noise"] = acc_noise / (i + 1)
+            logMsg["acc/train_clean"] = acc_clean / (i + 1)
             if (wandb != None):
                 wandb.log(logMsg)
                 wandb.watch(self.prior,log = "all", log_graph=True)
-        
+
         # epoch
         self.model_scheduler.step()
         self.encoder_scheduler.step()
@@ -239,6 +235,26 @@ class UncertaintyTrainer:
         self.save_encoder(f'result/{self.config["output_folder"]}/encoder_{str(epoch).zfill(2)}.pt')
 
         return acclist
+
+    def getTrainAcc(self, condition_X, target_real, correct) -> None:
+        self.prior.eval()
+        with torch.no_grad():
+            
+            input_z = torch.normal(mean = 0, std = 0, size=(self.config["batch"] , self.N_classes)).unsqueeze(1).to(self.device)
+            delta_p = torch.zeros(input_z.shape[0], input_z.shape[1], 1).to(self.device)
+
+            approx21, _ = self.prior(input_z, condition_X, delta_p, reverse=True)
+            
+            probs = torch.clamp(approx21, min=0, max=1)
+            probsSum = torch.sum(probs, 2).unsqueeze(1).expand(probs.size())
+            logits = probs / probsSum
+            logits = logits.squeeze(1)
+
+            acc = accuracy(logits, target_real)[0].cpu()
+            acc_noise = accuracy(logits[correct == False], target_real[correct == False])[0].cpu()
+            acc_clean = accuracy(logits[correct == True], target_real[correct == True])[0].cpu()
+        self.prior.train()
+        return acc, acc_noise, acc_clean
 
     def save(self, path) -> None:
         torch.save(self.prior.state_dict(), path)
@@ -279,7 +295,7 @@ class UncertaintyTrainer:
             probsSum = torch.sum(probs, 2).unsqueeze(1).expand(probs.size())
             probs /= probsSum
 
-            probs = probs.detach().squeeze(1)            
+            probs = probs.detach().squeeze(1)  
             probs = probs.view(sample_n, -1, self.N_classes)
             probs_all = probs
             probs_mean = torch.mean(probs, dim=0, keepdim=False)
