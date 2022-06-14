@@ -5,13 +5,15 @@ from torch import nn, optim
 from torch.utils import data
 
 from module.resnet import MyResNet
+from module.PreResNet_cifar import ResNet18
 from module.dun_datasets.image_loaders import get_image_loader
 from tqdm import tqdm
 from module.config import checkOutputDirectoryAndCreate, loadConfig, dumpConfig, showConfig
 from module.noise_datasets.noise_datasets import cifar_dataloader
 from module.losses.vicreg import vicreg_loss_func
 from module.mixup import mixup_data, mixup_criterion
-from module.auto_drop import auto_drop_byTarget
+from module.utils import accuracy
+
 
 try:
     import wandb
@@ -32,9 +34,12 @@ class TrainImageClassification():
         self.epochs = config["epochs"]
         self.lr = config["lr"]
         self.loadNoiseDataset()
-        self.model = MyResNet(in_channels = self.input_channels, feature_dim = self.cond_size, isPredictor = True, isLinear = True, num_classes = self.N_classes).to(self.device)
-        # self.optimizer = optim.SGD(self.model.parameters(), lr=self.lr, momentum=0.9, weight_decay=5e-4)
-        self.optimizer = optim.AdamW(self.model.parameters(), lr=self.lr)
+        if (self.config.get("UsePreResNet", False)):
+            self.model = ResNet18(num_classes = self.N_classes).to(self.device)
+        else:
+            self.model = MyResNet(in_channels = self.input_channels, feature_dim = self.cond_size, isPredictor = True, isLinear = True, num_classes = self.N_classes).to(self.device)
+        self.optimizer = optim.SGD(self.model.parameters(), lr=self.lr, momentum=0.9, weight_decay=5e-4)
+        # self.optimizer = optim.AdamW(self.model.parameters(), lr=self.lr)
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=self.epochs)
         self.loss_fn = nn.CrossEntropyLoss()
         
@@ -58,37 +63,25 @@ class TrainImageClassification():
         self.num_test_images = len(self.val_loader.dataset)
         return
 
-    def accuracy(self, output, target, topk=(1,)):
-        """Computes the accuracy over the k top
-        predictions for the specified values of k
-        """
-        with torch.no_grad():
-            maxk = max(topk)
-            batch_size = target.size(0)
-
-            _, pred = output.topk(maxk, 1, True, True)
-            pred = pred.t()
-            correct = pred.eq(target.view(1, -1).expand_as(pred))
-            res = []
-            for k in topk:
-                correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True)
-                res.append(correct_k.mul_(100.0 / batch_size))
-            return res
-
     def train(self, loader):
         self.model.train()
         loss = 0
         acc = 0
         acc_noise = 0
         acc_clean = 0
+        acc_noise_batch = torch.tensor([0])
+        acc_clean_batch = torch.tensor([0])
         pbar = tqdm(enumerate(loader))
         for batch_idx, (data, target, correct, target_real) in pbar:
             data, target = data.to(self.device), target.to(self.device)
             correct, target_real = correct.to(self.device), target_real.to(self.device)
 
-            output = self.model(data)
+            if (self.config.get("UsePreResNet", False)):
+                _, output = self.model(data)
+            else:
+                output = self.model(data)
             loss_batch = self.loss_fn(output, target)
-            # acc_batch = self.accuracy(output, target_real)[0].cpu()
+            # acc_batch = accuracy(output, target_real)[0].cpu()
             
             loss += loss_batch.item()
 
@@ -97,57 +90,22 @@ class TrainImageClassification():
             self.optimizer.step()
             with torch.no_grad():
                 self.model.eval()
-                logits = self.model(data)
-                acc_batch = self.accuracy(logits, target_real)[0].cpu()
-                acc_noise_batch = self.accuracy(logits[correct == False], target_real[correct == False])[0].cpu()
-                acc_clean_batch = self.accuracy(logits[correct == True], target_real[correct == True])[0].cpu()
+                if (self.config.get("UsePreResNet", False)):
+                    _, logits = self.model(data)
+                else:
+                    logits = self.model(data)
+                acc_batch = accuracy(logits, target_real)[0].cpu()
+                if (logits[correct == False].size(0) != 0):
+                    acc_noise_batch = accuracy(logits[correct == False], target_real[correct == False])[0].cpu()
+                if (logits[correct == True].size(0) != 0):
+                    acc_clean_batch = accuracy(logits[correct == True], target_real[correct == True])[0].cpu()
                 acc_noise += acc_noise_batch.item()
                 acc_clean += acc_clean_batch.item()
                 acc += acc_batch.item()
                 self.model.train()
             pbar.set_description(f'epoch: {self.epoch}, acc: {float(acc / (batch_idx + 1)):.5f}, loss: {float(loss / (batch_idx + 1)):.5f}')
         return loss / (batch_idx + 1), acc / (batch_idx + 1), acc_noise / (batch_idx + 1), acc_clean / (batch_idx + 1)
-    
-    def trainAutoDrop(self, loader, logMsg):
-        self.model.train()
-        loss = 0
-        acc = 0
-        acc_noise = 0
-        acc_clean = 0
-        pbar = tqdm(enumerate(loader))
-        for batch_idx, (data, target, correct, target_real) in pbar:
-            data, target = data.to(self.device), target.to(self.device)
-            correct, target_real = correct.to(self.device), target_real.to(self.device)
 
-            output = self.model(data)
-            
-            drop_mask, drop_precision, drop_recall, drop_acc, drop_rate = auto_drop_byTarget(output, target, self.batch_size, correct, self.epoch)
-            
-            logMsg["drop_precision"] = drop_precision
-            logMsg["drop_recall"] = drop_recall
-            logMsg["drop_acc"] = drop_acc
-            logMsg["drop_rate"] = drop_rate
-
-            loss_ce = self.loss_fn(output, target)
-            loss_batch = (loss_ce * (1-drop_mask.to(self.device)))
-
-            loss += loss_batch.item()
-
-            self.optimizer.zero_grad()
-            loss_batch.backward()
-            self.optimizer.step()
-            with torch.no_grad():
-                self.model.eval()
-                logits = self.model(data)
-                acc_batch = self.accuracy(logits, target_real)[0].cpu()
-                acc_noise_batch = self.accuracy(logits[correct == False], target_real[correct == False])[0].cpu()
-                acc_clean_batch = self.accuracy(logits[correct == True], target_real[correct == True])[0].cpu()
-                acc_noise += acc_noise_batch.item()
-                acc_clean += acc_clean_batch.item()
-                acc += acc_batch.item()
-                self.model.train()
-            pbar.set_description(f'epoch: {self.epoch}, acc: {float(acc / (batch_idx + 1)):.5f}, loss: {float(loss / (batch_idx + 1)):.5f}')
-        return loss / (batch_idx + 1), acc / (batch_idx + 1), acc_noise / (batch_idx + 1), acc_clean / (batch_idx + 1)
     
     def trainMixup(self, loader):
         self.model.train()
@@ -156,14 +114,18 @@ class TrainImageClassification():
         acc = 0
         acc_noise = 0
         acc_clean = 0
+        acc_noise_batch = torch.tensor([0])
+        acc_clean_batch = torch.tensor([0])
         pbar = tqdm(enumerate(loader))
         for batch_idx, (data, target, correct, target_real) in pbar:
             data, target = data.to(self.device), target.to(self.device)
             correct, target_real = correct.to(self.device), target_real.to(self.device)
             
             mixed_x, targets_a, targets_b, lam, mixed_y = mixup_data(data, target)
-            
-            logits = self.model(mixed_x)
+            if (self.config.get("UsePreResNet", False)):
+                _, logits = self.model(mixed_x)
+            else:
+                logits = self.model(mixed_x)
 
             loss_sup_batch = mixup_criterion(logits, targets_a, targets_b, lam)
 
@@ -178,10 +140,15 @@ class TrainImageClassification():
             
             with torch.no_grad():
                 self.model.eval()
-                logits = self.model(data)
-                acc_batch = self.accuracy(logits, target_real)[0].cpu()
-                acc_noise_batch = self.accuracy(logits[correct == False], target_real[correct == False])[0].cpu()
-                acc_clean_batch = self.accuracy(logits[correct == True], target_real[correct == True])[0].cpu()
+                if (self.config.get("UsePreResNet", False)):
+                    _, logits = self.model(data)
+                else:
+                    logits = self.model(data)
+                acc_batch = accuracy(logits, target_real)[0].cpu()
+                if (logits[correct == False].size(0) != 0):
+                    acc_noise_batch = accuracy(logits[correct == False], target_real[correct == False])[0].cpu()
+                if (logits[correct == True].size(0) != 0):
+                    acc_clean_batch = accuracy(logits[correct == True], target_real[correct == True])[0].cpu()
                 acc_noise += acc_noise_batch.item()
                 acc_clean += acc_clean_batch.item()
                 acc += acc_batch.item()
@@ -197,21 +164,33 @@ class TrainImageClassification():
         acc = 0
         acc_noise = 0
         acc_clean = 0
+        acc_noise_batch = torch.tensor([0])
+        acc_clean_batch = torch.tensor([0])
         pbar = tqdm(enumerate(loader))
         for batch_idx, (data, img1, img2, target, correct, target_real) in pbar:
             data, target = data.to(self.device), target.to(self.device)
             img1, img2 = img1.to(self.device), img2.to(self.device)
             correct, target_real = correct.to(self.device), target_real.to(self.device)
 
-            # Self-learning
-            _, _, z1, z2 = self.model.forward_ssl(img1, img2)
-            loss_vic_batch, loss_vic_sim_batch, loss_vic_var_batch, loss_vic_cov_batch = vicreg_loss_func(z1, z2) # loss
-            
-            
-            # Supervised-learning
-            mixed_x, targets_a, targets_b, lam, _ = mixup_data(data, target)
-            logits = self.model(mixed_x)
-            loss_sup_batch = mixup_criterion(logits, targets_a, targets_b, lam)
+            if (self.config.get("UsePreResNet", False)):
+                # Self-learning
+                projection_out1, _ = self.model.forward(img1)
+                projection_out2, _ = self.model.forward(img2)
+                loss_vic_batch, loss_vic_sim_batch, loss_vic_var_batch, loss_vic_cov_batch = vicreg_loss_func(projection_out1, projection_out2) # loss
+                
+                # Supervised-learning
+                mixed_x, targets_a, targets_b, lam, _ = mixup_data(data, target)
+                _, logits = self.model(mixed_x)
+                loss_sup_batch = mixup_criterion(logits, targets_a, targets_b, lam)
+            else:
+                # Self-learning
+                _, _, z1, z2 = self.model.forward_ssl(img1, img2)
+                loss_vic_batch, loss_vic_sim_batch, loss_vic_var_batch, loss_vic_cov_batch = vicreg_loss_func(z1, z2) # loss
+                
+                # Supervised-learning
+                mixed_x, targets_a, targets_b, lam, _ = mixup_data(data, target)
+                logits = self.model(mixed_x)
+                loss_sup_batch = mixup_criterion(logits, targets_a, targets_b, lam)
 
             # loss
             loss_batch = loss_vic_batch + loss_sup_batch
@@ -226,10 +205,16 @@ class TrainImageClassification():
 
             with torch.no_grad():
                 self.model.eval()
-                logits = self.model(data)
-                acc_batch = self.accuracy(logits, target_real)[0].cpu()
-                acc_noise_batch = self.accuracy(logits[correct == False], target_real[correct == False])[0].cpu()
-                acc_clean_batch = self.accuracy(logits[correct == True], target_real[correct == True])[0].cpu()
+                if (self.config.get("UsePreResNet", False)):
+                    _, logits = self.model(data)
+                else:
+                    logits = self.model(data)
+
+                acc_batch = accuracy(logits, target_real)[0].cpu()
+                if (logits[correct == False].size(0) != 0):
+                    acc_noise_batch = accuracy(logits[correct == False], target_real[correct == False])[0].cpu()
+                if (logits[correct == True].size(0) != 0):
+                    acc_clean_batch = accuracy(logits[correct == True], target_real[correct == True])[0].cpu()
                 acc += acc_batch.item()
                 acc_noise += acc_noise_batch.item()
                 acc_clean += acc_clean_batch.item()
@@ -246,22 +231,34 @@ class TrainImageClassification():
         acc = 0
         acc_noise = 0
         acc_clean = 0
+        acc_noise_batch = torch.tensor([0])
+        acc_clean_batch = torch.tensor([0])
         pbar = tqdm(enumerate(loader))
         for batch_idx, (data, img1, img2, target, correct, target_real) in pbar:
             data, target = data.to(self.device), target.to(self.device)
             img1, img2 = img1.to(self.device), img2.to(self.device)
             correct, target_real = correct.to(self.device), target_real.to(self.device)
 
-            # Self-learning
-            _, _, z1, z2 = self.model.forward_ssl(img1, img2)
-            loss_vic_batch, loss_vic_sim_batch, loss_vic_var_batch, loss_vic_cov_batch = vicreg_loss_func(z1, z2) # loss
+            if (self.config.get("UsePreResNet", False)):
+                # Self-learning
+                projection_out1, _ = self.model.forward(img1)
+                projection_out2, _ = self.model.forward(img2)
+                loss_vic_batch, loss_vic_sim_batch, loss_vic_var_batch, loss_vic_cov_batch = vicreg_loss_func(projection_out1, projection_out2) # loss
+            else:
+                # Self-learning
+                _, _, z1, z2 = self.model.forward_ssl(img1, img2)
+                loss_vic_batch, loss_vic_sim_batch, loss_vic_var_batch, loss_vic_cov_batch = vicreg_loss_func(z1, z2) # loss
             
             
             # Supervised-learning
             # mixed_x, targets_a, targets_b, lam, _ = mixup_data(data, target)
             # logits = self.model(mixed_x)
             # loss_sup_batch = mixup_criterion(logits, targets_a, targets_b, lam)
-            logits = self.model(data)
+            if (self.config.get("UsePreResNet", False)):
+                _, logits = self.model(data)
+            else:
+                logits = self.model(data)
+
             loss_ce_batch = self.loss_fn(logits, target)
 
             # loss
@@ -277,10 +274,15 @@ class TrainImageClassification():
 
             with torch.no_grad():
                 self.model.eval()
-                logits = self.model(data)
-                acc_batch = self.accuracy(logits, target_real)[0].cpu()
-                acc_noise_batch = self.accuracy(logits[correct == False], target_real[correct == False])[0].cpu()
-                acc_clean_batch = self.accuracy(logits[correct == True], target_real[correct == True])[0].cpu()
+                if (self.config.get("UsePreResNet", False)):
+                    _, logits = self.model(data)
+                else:
+                    logits = self.model(data)
+                acc_batch = accuracy(logits, target_real)[0].cpu()
+                if (logits[correct == False].size(0) != 0):
+                    acc_noise_batch = accuracy(logits[correct == False], target_real[correct == False])[0].cpu()
+                if (logits[correct == True].size(0) != 0):
+                    acc_clean_batch = accuracy(logits[correct == True], target_real[correct == True])[0].cpu()
                 acc += acc_batch.item()
                 acc_noise += acc_noise_batch
                 acc_clean += acc_clean_batch
@@ -297,9 +299,13 @@ class TrainImageClassification():
             for batch_idx, (data, target) in pbar:
                 data, target = data.to(self.device), target.to(self.device)
                 
-                output = self.model(data)
+                if (self.config.get("UsePreResNet", False)):
+                    _, output = self.model(data)
+                else:
+                    output = self.model(data)
+
                 loss_batch = self.loss_fn(output, target)
-                acc_batch = self.accuracy(output, target)[0].cpu()
+                acc_batch = accuracy(output, target)[0].cpu()
 
                 loss += loss_batch.item()
                 acc += acc_batch.item()
